@@ -1,11 +1,11 @@
 {
   "name": "@badaimweeb/js-dtsocket",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Type-safe API + Event data (WIP) transfer layer over ProtoV2/V2d",
   "main": "dist/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "prepublish": "npm run build",
+    "prepublishOnly": "npm run build",
     "build": "tsc"
   },
   "repository": {
