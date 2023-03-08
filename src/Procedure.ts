@@ -1,13 +1,18 @@
-export const procedure = {
-    input: <TIn>(iCallback: (input: unknown) => TIn) => {
-        return createProcedure<TIn>(iCallback);
+export const InitProcedureGenerator = <
+    LocalState extends { [key: string]: any } = {}, 
+    GlobalState extends { [key: string]: any } = {}
+>(gState: GlobalState) => {
+    return {
+        input: <TIn>(iCallback: (input: unknown) => TIn) => {
+            return createProcedure<GlobalState, LocalState, TIn>(iCallback);
+        }
     }
 }
 
-function createProcedure<TIn>(iCallback: (input: unknown) => TIn) {
+function createProcedure<GlobalState, LocalState, TIn>(iCallback: (input: unknown) => TIn) {
     return {
-        resolve: <GlobalState, LocalState, TOut>(oCallback: (gState: GlobalState, lState: LocalState, input: TIn) => PromiseLike<TOut>) => {
-            return new Procedure<TIn, TOut>(iCallback, oCallback);
+        resolve: <TOut>(oCallback: (gState: GlobalState, lState: LocalState, input: TIn) => PromiseLike<TOut>) => {
+            return new Procedure<TIn, TOut, GlobalState, LocalState>(iCallback, oCallback);
         }
     }
 }
