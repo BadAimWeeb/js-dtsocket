@@ -1,19 +1,20 @@
-import type { Procedure } from "./procedure.js";
 import { encode, decode } from "msgpack-lite";
 import type { DTSocketServer } from "./server.js";
 import type { Socket } from "./types.js";
 
-export class DTSocketClient<_T extends DTSocketServer<G, L, P>, G, L, P extends {
-    [api: string]: Procedure<any, any>
-}> {
-    m0CallbackTable: Map<number, [resolve: (value: unknown) => void, reject: (reason?: any) => void]>; // nonce, callback
+type P<T extends DTSocketServer<any, any, any>> = T extends DTSocketServer<any, any, infer P> ? P : never;
 
-    procedure = <APIKey extends keyof P>(x: APIKey) => {
-        return (input: Parameters<P[APIKey]["execute"]>[2]) => {
-            return new Promise<ReturnType<P[APIKey]["execute"]>>((resolve, reject) => {
+export class DTSocketClient<T extends DTSocketServer<any, any, any>> {
+    m0CallbackTable: Map<number, [resolve: (value: unknown) => void, reject: (reason?: any) => void]> = new Map(); // nonce, callback
+
+    procedure = <APIKey extends keyof P<T>>(x: APIKey) => {
+        return (input: Parameters<P<T>[APIKey]["execute"]>[2]) => {
+            return new Promise<ReturnType<P<T>[APIKey]["execute"]>>((resolve, reject) => {
                 let nonce = Math.random();
                 this.m0CallbackTable.set(nonce, [resolve, reject]);
-                this.socket.send(1, encode([
+                this.socket.send(1, encode(input === undefined ? [
+                    0, nonce, x
+                ] : [
                     0, nonce, x, input
                 ]));
             });

@@ -14,7 +14,7 @@ export class DTSocketServer<
     }
 > {
     globalState: GlobalState;
-    localState: Map<Socket, LocalState>;
+    localState: Map<Socket, Partial<LocalState>> = new Map();
     private handler: T;
 
     constructor(handler: T, defaultGlobalState?: GlobalState) {
@@ -23,10 +23,6 @@ export class DTSocketServer<
     }
 
     async processSession(socket: Socket) {
-        socket.send(1, encode({ 
-            DTSOCKET: 1
-        }));
-
         socket.on("data", async (qos, data) => {
             try {
                 let decodedData = decode(data) as [mode: number, ...data: unknown[]];
@@ -47,6 +43,8 @@ export class DTSocketServer<
                         }
 
                         try {
+                            if (!this.localState.get(socket)) this.localState.set(socket, {});
+
                             let result = await procedure.execute(this.globalState, this.localState.get(socket), m0Data[2]);
                             socket.send(1, encode([
                                 0, m0Data[0], true, result
@@ -58,7 +56,9 @@ export class DTSocketServer<
                         }
                         break;
                 }
-            } catch {}
+            } catch (e) {
+                console.log(e)
+            }
         });
     }
 }
