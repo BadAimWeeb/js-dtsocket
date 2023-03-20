@@ -1,4 +1,4 @@
-import type { Procedure } from "./procedure.js";
+import type { Procedure } from "./procedures.js";
 import type { Socket } from "./types.js";
 import { encode, decode } from "msgpack-lite";
 
