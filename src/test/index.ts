@@ -1,16 +1,13 @@
-import { connect, Server } from "@badaimweeb/js-protov2d";
+import { connect, Server, keyGeneration } from "@badaimweeb/js-protov2d";
 import z from "zod";
-import { Buffer } from "buffer";
 import { DTSocketClient, DTSocketServer, InitProcedureGenerator } from "../index.js";
 
-import pkg from "superdilithium";
-const { superDilithium } = pkg;
-let keyPair = await superDilithium.keyPair();
+let k = await keyGeneration();
 
 let server = new Server({
     port: 0,
-    privateKey: Array.from(keyPair.privateKey).map((x) => x.toString(16).padStart(2, "0")).join(""),
-    publicKey: Array.from(keyPair.publicKey).map((x) => x.toString(16).padStart(2, "0")).join("")
+    privateKey: k.privateKey,
+    publicKey: k.publicKey
 });
 
 let gState: {
@@ -18,7 +15,7 @@ let gState: {
 } = {};
 let pGen = InitProcedureGenerator<{
     stored?: number;
-}>(gState);
+}>();
 let dtServer = new DTSocketServer({
     add: pGen
         .input(z.object({ a: z.number(), b: z.number() }))
@@ -39,15 +36,21 @@ let dtServer = new DTSocketServer({
         .input(z.number())
         .resolve((gState, lState, input) => {
             lState["stored"] = input;
-        }
-    ),
+        }),
     getLocal: pGen
         .input(z.void())
         .resolve((gState, lState, input) => {
             return lState["stored"];
-        }
-    )
-});
+        }),
+    streamCounter: pGen
+        .input(z.void())
+        .streamResolve(async function* (gState, lState, input) {
+            for (let i = 0; i < 5; i++) {
+                yield i;
+                await new Promise((resolve) => setTimeout(resolve, 100));
+            }
+        })
+}, gState);
 
 // Get port
 let port = server.port;
@@ -62,15 +65,15 @@ let client1 = await connect({
     url: `ws://localhost:${port}`,
     publicKey: {
         type: "key",
-        key: Array.from(keyPair.publicKey).map((x) => x.toString(16).padStart(2, "0")).join("")
+        key: k.publicKey
     }
 });
 
 let client2 = await connect({
     url: `ws://localhost:${port}`,
     publicKey: {
-        type: "key",
-        key: Array.from(keyPair.publicKey).map((x) => x.toString(16).padStart(2, "0")).join("")
+        type: "hash",
+        hash: k.publicKeyHash
     }
 });
 
@@ -126,6 +129,33 @@ let res5 = await dtClient1.procedure("get")();
 pass.push(res5 === rng3);
 console.log("Test 5:", res5 === rng3 ? "Passed" : "Failed");
 console.log(`- Output: ${res5}`);
+console.log();
+
+// Test 6
+let res6 = gState.stored;
+
+pass.push(res6 === rng3);
+console.log("Test 6:", res6 === rng3 ? "Passed" : "Failed");
+console.log(`- Input: ${rng3}`);
+console.log(`- Output: ${res6}`);
+console.log();
+
+// Test 7
+let res7 = dtClient1.streamingProcedure("streamCounter")();
+console.log("Test 7:");
+let internalCounter = 0;
+let localPass = true;
+let st = Date.now();
+for await (let i of res7) {
+    await new Promise((resolve) => setTimeout(resolve, 100)); // stress
+    let pass = (i === (internalCounter++));
+    console.log(`- Output: ${i}`, pass ? "Passed" : "Failed", `${Date.now() - st}ms`);
+    localPass = localPass && pass;
+}
+console.log("- Exit stream");
+localPass = localPass && internalCounter === 5;
+pass.push(localPass);
+console.log(`Status: ${localPass ? "Passed" : "Failed"}`);
 console.log();
 
 console.log("All tests passed:", pass.every(x => x) ? "Yes" : "No");
