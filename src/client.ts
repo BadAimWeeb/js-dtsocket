@@ -29,7 +29,7 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any>> {
 
     procedure = <APIKey extends StandandProcedureArray<P<T>>>(x: APIKey) => {
         return (input: Parameters<P<T>[APIKey]["execute"]>[2]) => {
-            return new Promise<ReturnType<P<T>[APIKey]["execute"]>>((resolve, reject) => {
+            return new Promise((resolve, reject) => {
                 let nonce = this.nonceCounter++;
                 this.m0CallbackTable.set(nonce, [resolve, reject]);
                 this.socket.send(1, encode(input === undefined ? [
@@ -37,7 +37,7 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any>> {
                 ] : [
                     0, nonce, x, input
                 ]));
-            });
+            }) as Promise<Awaited<ReturnType<P<T>[APIKey]["execute"]>>>;
         }
     }
 
