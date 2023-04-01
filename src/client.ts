@@ -150,59 +150,80 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any>> {
         }
     }
 
-    constructor(private socket: Socket) {
-        this.socket.on("data", async (qos, data) => {
-            try {
-                let decodedData = decode(data) as [mode: number, ...data: unknown[]];
-                if (typeof decodedData[0] !== "number") throw new Error("Invalid data");
+    async _handleData(qos: number, data: Uint8Array) {
+        try {
+            let decodedData = decode(data) as [mode: number, ...data: unknown[]];
+            if (typeof decodedData[0] !== "number") throw new Error("Invalid data");
 
-                switch (decodedData[0]) {
-                    case 0:
-                        if (!qos) return;
+            switch (decodedData[0]) {
+                case 0:
+                    if (!qos) return;
 
-                        let m0Data = decodedData.slice(1) as [nonce: number, success: boolean, result: unknown];
-                        if (typeof m0Data[0] !== "number" || typeof m0Data[1] !== "boolean") throw new Error("Invalid data");
+                    let m0Data = decodedData.slice(1) as [nonce: number, success: boolean, result: unknown];
+                    if (typeof m0Data[0] !== "number" || typeof m0Data[1] !== "boolean") throw new Error("Invalid data");
 
-                        let callback = this.m0CallbackTable.get(m0Data[0]);
-                        if (!callback) return;
+                    let callback = this.m0CallbackTable.get(m0Data[0]);
+                    if (!callback) return;
 
-                        this.m0CallbackTable.delete(m0Data[0]);
-                        if (m0Data[1]) {
-                            callback[0](m0Data[2]);
-                        } else {
-                            callback[1](m0Data[2]);
-                        }
-                        break;
-                    case 1:
-                        if (!qos) return;
+                    this.m0CallbackTable.delete(m0Data[0]);
+                    if (m0Data[1]) {
+                        callback[0](m0Data[2]);
+                    } else {
+                        callback[1](m0Data[2]);
+                    }
+                    break;
+                case 1:
+                    if (!qos) return;
 
-                        let m1Data = decodedData.slice(1) as [nonce: number, type: number, packetNo: number, result: unknown];
-                        if (typeof m1Data[0] !== "number" || typeof m1Data[1] !== "number" || typeof m1Data[2] !== "number") throw new Error("Invalid data");
+                    let m1Data = decodedData.slice(1) as [nonce: number, type: number, packetNo: number, result: unknown];
+                    if (typeof m1Data[0] !== "number" || typeof m1Data[1] !== "number" || typeof m1Data[2] !== "number") throw new Error("Invalid data");
 
-                        let callback2 = this.m1CallbackTable.get(m1Data[0]);
-                        if (!callback2) return;
+                    let callback2 = this.m1CallbackTable.get(m1Data[0]);
+                    if (!callback2) return;
 
-                        switch (m1Data[1]) {
-                            case 0:
-                                // Data
-                                callback2[0](m1Data[2], m1Data[3]);
-                                break;
-                            case 1:
-                                // End
-                                callback2[1](m1Data[2]);
-                                this.m1CallbackTable.delete(m1Data[0]);
-                                break;
-                            case 2:
-                                // Fault
-                                callback2[2](m1Data[2], m1Data[3]);
-                                this.m1CallbackTable.delete(m1Data[0]);
-                                break;
-                        }
-                        break;
-                }
-            } catch (e) {
-                console.error(e);
+                    switch (m1Data[1]) {
+                        case 0:
+                            // Data
+                            callback2[0](m1Data[2], m1Data[3]);
+                            break;
+                        case 1:
+                            // End
+                            callback2[1](m1Data[2]);
+                            this.m1CallbackTable.delete(m1Data[0]);
+                            break;
+                        case 2:
+                            // Fault
+                            callback2[2](m1Data[2], m1Data[3]);
+                            this.m1CallbackTable.delete(m1Data[0]);
+                            break;
+                    }
+                    break;
             }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    constructor(private socket: Socket) {
+        let u = this._handleData.bind(this);
+        this.socket.on("data", u);
+
+        this.socket.on("resumeFailed", newSocket => {
+            // throw all pending promises
+            for (let [nonce, callback] of this.m0CallbackTable) {
+                callback[1]("Old connection closed");
+            }
+
+            for (let [nonce, callback] of this.m1CallbackTable) {
+                callback[2](0, "Old connection closed");
+            }
+
+            this.m0CallbackTable.clear();
+            this.m1CallbackTable.clear();
+
+            this.socket.removeListener("data", u);
+            this.socket = newSocket;
+            this.socket.on("data", u);
         });
     }
 }
