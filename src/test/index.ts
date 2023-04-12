@@ -13,10 +13,9 @@ let server = new Server({
 let gState: {
     stored?: number;
 } = {};
-let pGen = InitProcedureGenerator<{
-    stored?: number;
-}>();
-let dtServer = new DTSocketServer({
+let pGen = InitProcedureGenerator<typeof gState>();
+
+const procedureTable = {
     add: pGen
         .input(z.object({ a: z.number(), b: z.number() }))
         .resolve((gState, lState, input) => {
@@ -50,7 +49,20 @@ let dtServer = new DTSocketServer({
                 await new Promise((resolve) => setTimeout(resolve, 100));
             }
         })
-}, gState);
+};
+
+// typescript doesn't support partial type inference yet. why
+let dtServer = new DTSocketServer<
+    typeof gState,
+    {},
+    {
+        csEvents: {},
+        scEvents: {
+            test: (a: number) => void
+        }
+    },
+    typeof procedureTable
+>(procedureTable, gState);
 
 // Get port
 let port = server.port;
@@ -147,6 +159,35 @@ let internalCounter = 0;
 let localPass = true;
 let st = Date.now();
 for await (let i of res7) {
+    await new Promise((resolve) => setTimeout(resolve, 100)); // stress
+    let pass = (i === (internalCounter++));
+    console.log(`- Output: ${i}`, pass ? "Passed" : "Failed", `${Date.now() - st}ms`);
+    localPass = localPass && pass;
+}
+console.log("- Exit stream");
+localPass = localPass && internalCounter === 5;
+pass.push(localPass);
+console.log(`Status: ${localPass ? "Passed" : "Failed"}`);
+console.log();
+
+// Test 8
+let rng5 = Math.random();
+let rng6 = Math.random();
+let res8 = await dtClient2.p.add({ a: rng5, b: rng6 });
+
+pass.push(res8 === rng5 + rng6);
+console.log("Test 8:", res8 === rng5 + rng6 ? "Passed" : "Failed");
+console.log(`- Input: ${rng5} + ${rng6} = ${rng5 + rng6}`);
+console.log(`- Output: ${res8}`);
+console.log();
+
+// Test 9
+let res9 = dtClient2.sp.streamCounter();
+console.log("Test 9:");
+internalCounter = 0;
+localPass = true;
+st = Date.now();
+for await (let i of res9) {
     await new Promise((resolve) => setTimeout(resolve, 100)); // stress
     let pass = (i === (internalCounter++));
     console.log(`- Output: ${i}`, pass ? "Passed" : "Failed", `${Date.now() - st}ms`);

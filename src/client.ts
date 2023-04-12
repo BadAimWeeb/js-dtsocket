@@ -1,10 +1,10 @@
 import { encode, decode } from "msgpack-lite";
 import type { DTSocketServer } from "./server.js";
-import type { Socket } from "./types.js";
+import type { Socket, CSEventTable, SCEventTable } from "./types.js";
 import type { Procedure, StreamingProcedure } from "./procedures.js";
 import { EventEmitter } from "events";
 
-type P<T extends DTSocketServer<any, any, any>> = T extends DTSocketServer<any, any, infer P> ? P : never;
+type P<T extends DTSocketServer<any, any, any, any>> = T extends DTSocketServer<any, any, any, infer P> ? P : never;
 type AsyncIterableUnwrap<T> = T extends AsyncIterable<infer U> ? U : never;
 
 type StandandProcedureArray<T extends object> = {
@@ -15,17 +15,41 @@ type StreamingProcedureArray<T extends object> = {
     [K in keyof T]: T[K] extends StreamingProcedure<any, any, any, any> ? K : never
 }[keyof T];
 
-export class DTSocketClient<T extends DTSocketServer<any, any, any>> {
+type StandardProcedureObject<T extends object> = {
+    [K in StandandProcedureArray<T>]: T[K] extends Procedure<infer I, infer O, any, any> ? (input: I) => Promise<Awaited<O>> : never
+};
+
+type StreamingProcedureObject<T extends object> = {
+    [K in StreamingProcedureArray<T>]: T[K] extends StreamingProcedure<infer I, infer O, any, any> ? (input: I) => AsyncGenerator<O, void, unknown> : never
+};
+
+type ExtractEventTable<T extends DTSocketServer<any, any, any, any>> = T extends DTSocketServer<any, any, infer E, any> ? E : never;
+
+export interface DTSocketClient<T extends DTSocketServer<any, any, any, any>> extends EventEmitter {
+    on(event: keyof ExtractEventTable<T>["scEvents"], callback: (...args: Parameters<ExtractEventTable<T>["scEvents"][keyof ExtractEventTable<T>["scEvents"]]>) => void): this;
+    on(event: string | symbol, callback: (...args: any[]) => void): this;
+
+    emit(event: keyof ExtractEventTable<T>["csEvents"], ...args: Parameters<ExtractEventTable<T>["csEvents"][keyof ExtractEventTable<T>["csEvents"]]>): boolean;
+    emit(event: string | symbol, ...args: any[]): boolean;
+};
+
+export class DTSocketClient<T extends DTSocketServer<any, any, any, any>> extends EventEmitter {
     nonceCounter = 0;
-    m0CallbackTable: Map<
+    private m0CallbackTable: Map<
         number /** nonce */,
         [resolve: (value: unknown) => void, reject: (reason?: any) => void] /** callback */
     > = new Map();
 
-    m1CallbackTable: Map<
+    private m1CallbackTable: Map<
         number /** nonce */,
         [stream: (packetNo: number, value: unknown) => void, end: (totalPacket: number) => void, fault: (totalPacket: number, reason?: any) => void] /** callback */
     > = new Map();
+
+    private m2Table: {
+        [event: string]: Map<number, unknown[]>
+    } = {};
+    private m2RecvCounter: Map<keyof CSEventTable<ExtractEventTable<T>>, number> = new Map();
+    private m2SendCounter: Map<keyof SCEventTable<ExtractEventTable<T>>, number> = new Map();
 
     procedure = <APIKey extends StandandProcedureArray<P<T>>>(x: APIKey) => {
         return (input: Parameters<P<T>[APIKey]["execute"]>[2]) => {
@@ -40,6 +64,12 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any>> {
             }) as Promise<Awaited<ReturnType<P<T>[APIKey]["execute"]>>>;
         }
     }
+
+    p = new Proxy<StandardProcedureObject<P<T>>>({} as any, {
+        get: <APIKey extends StandandProcedureArray<P<T>>>(_, p: APIKey | string | symbol) => {
+            return this.procedure(p as APIKey);
+        }
+    });
 
     streamingProcedure = <APIKey extends StreamingProcedureArray<P<T>>>(x: APIKey) => {
         return (input: Parameters<P<T>[APIKey]["execute"]>[2]) => {
@@ -150,7 +180,13 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any>> {
         }
     }
 
-    async _handleData(qos: number, data: Uint8Array) {
+    sp = new Proxy<StreamingProcedureObject<P<T>>>({} as any, {
+        get: <APIKey extends StreamingProcedureArray<P<T>>>(_, p: APIKey | string | symbol) => {
+            return this.streamingProcedure(p as APIKey);
+        }
+    });
+
+    async _handleData(originalEmit: (event: string, ...data: any[]) => boolean, qos: number, data: Uint8Array) {
         try {
             let decodedData = decode(data) as [mode: number, ...data: unknown[]];
             if (typeof decodedData[0] !== "number") throw new Error("Invalid data");
@@ -198,6 +234,28 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any>> {
                             break;
                     }
                     break;
+                case 2:
+                    // Ordered event transmission
+                    if (!qos) return;
+
+                    let m2Data = decodedData.slice(1) as [event: string, nonce: number, ...args: unknown[]];
+                    if (!this.m2RecvCounter.has(m2Data[0])) this.m2RecvCounter.set(m2Data[0], 0);
+                    if (typeof m2Data[1] !== "number") throw new Error("Invalid data");
+                    if (!this.m2Table[m2Data[0]]) this.m2Table[m2Data[0]] = new Map();
+
+                    this.m2Table[m2Data[0]].set(m2Data[1], m2Data.slice(2));
+                    if (m2Data[1] === this.m2RecvCounter.get(m2Data[0])) {
+                        for (; ;) {
+                            let data = this.m2Table[m2Data[0]].get(this.m2RecvCounter.get(m2Data[0]));
+                            if (!data) break;
+
+                            this.m2Table[m2Data[0]].delete(this.m2RecvCounter.get(m2Data[0]));
+                            this.m2RecvCounter.set(m2Data[0], this.m2RecvCounter.get(m2Data[0]) + 1);
+
+                            originalEmit(m2Data[0], ...data);
+                        }
+                    }
+                    break;
             }
         } catch (e) {
             console.error(e);
@@ -205,25 +263,42 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any>> {
     }
 
     constructor(private socket: Socket) {
-        let u = this._handleData.bind(this);
+        super();
+        let originalEmit = this.emit.bind(this);
+
+        this.emit = (event: string, ...args: any[]) => {
+            if (!this.m2SendCounter.has(event)) this.m2SendCounter.set(event, 0);
+            socket.send(1, encode([
+                2, event, this.m2SendCounter.get(event), ...args
+            ]));
+            this.m2SendCounter.set(event, this.m2SendCounter.get(event) + 1);
+
+            return true;
+        }
+
+        let u = this._handleData.bind(this, originalEmit);
         this.socket.on("data", u);
 
-        this.socket.on("resumeFailed", newSocket => {
-            // throw all pending promises
-            for (let [nonce, callback] of this.m0CallbackTable) {
-                callback[1]("Old connection closed");
-            }
+        function handleResumeSocket(this: DTSocketClient<T>) {
+            this.socket.on("resumeFailed", (newSocket: Socket) => {
+                // throw all pending promises
+                for (let [nonce, callback] of this.m0CallbackTable) {
+                    callback[1]("Old connection closed");
+                }
 
-            for (let [nonce, callback] of this.m1CallbackTable) {
-                callback[2](0, "Old connection closed");
-            }
+                for (let [nonce, callback] of this.m1CallbackTable) {
+                    callback[2](0, "Old connection closed");
+                }
 
-            this.m0CallbackTable.clear();
-            this.m1CallbackTable.clear();
+                this.m0CallbackTable.clear();
+                this.m1CallbackTable.clear();
 
-            this.socket.removeListener("data", u);
-            this.socket = newSocket;
-            this.socket.on("data", u);
-        });
+                this.socket.removeListener("data", u);
+                this.socket = newSocket;
+                this.socket.on("data", u);
+                handleResumeSocket.call(this);
+            });
+        }
+        handleResumeSocket.call(this);
     }
 }

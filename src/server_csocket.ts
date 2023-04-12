@@ -1,0 +1,163 @@
+import { EventEmitter } from "events";
+import type { CSEventTable, SCEventTable, Socket } from "./types";
+import { DTSocketServer } from "./server.js";
+import { type Procedure, type StreamingProcedure } from "./procedures.js";
+
+import { encode, decode } from "msgpack-lite";
+
+export interface DTSocketServer_CSocket<
+    GlobalState,
+    LocalState,
+    EventTable extends {
+        csEvents: {
+            [event: string]: (...args: any[]) => void
+        },
+        scEvents: {
+            [event: string]: (...args: any[]) => void
+        }
+    },
+    T extends { [api: string]: Procedure<any, any, GlobalState, {}> | StreamingProcedure<any, any, GlobalState, {}>; }
+> extends EventEmitter {
+    on(event: keyof CSEventTable<EventTable>, callback: (...args: CSEventTable<EventTable>[keyof CSEventTable<EventTable>]) => void): this;
+    on(event: string | symbol, callback: (...args: any[]) => void): this;
+
+    emit(event: keyof SCEventTable<EventTable>, ...args: SCEventTable<EventTable>[keyof SCEventTable<EventTable>]): boolean;
+    emit(event: string | symbol, ...args: any[]): boolean;
+}
+
+export class DTSocketServer_CSocket<
+    GlobalState,
+    LocalState,
+    EventTable extends {
+        csEvents: {
+            [event: string]: (...args: any[]) => void
+        },
+        scEvents: {
+            [event: string]: (...args: any[]) => void
+        }
+    },
+    T extends { [api: string]: Procedure<any, any, GlobalState, {}> | StreamingProcedure<any, any, GlobalState, {}>; }
+> extends EventEmitter {
+    private m2Table: {
+        [event: string]: Map<number, unknown[]>
+    } = {};
+    private m2RecvCounter: Map<keyof CSEventTable<EventTable>, number> = new Map();
+    private m2SendCounter: Map<keyof SCEventTable<EventTable>, number> = new Map();
+
+    constructor(public id: string, public socket: Socket, public server: DTSocketServer<GlobalState, LocalState, EventTable, T>) {
+        super();
+        let originalEmit = this.emit.bind(this);
+        this.emit = (event: string, ...args: any[]) => {
+            if (!this.m2SendCounter.has(event)) this.m2SendCounter.set(event, 0);
+            socket.send(1, encode([
+                2, event, this.m2SendCounter.get(event), ...args
+            ]));
+            this.m2SendCounter.set(event, this.m2SendCounter.get(event) + 1);
+
+            return true;
+        }
+
+        socket.on("data", async (qos, data) => {
+            try {
+                let decodedData = decode(data) as [mode: number, ...data: unknown[]];
+                if (typeof decodedData[0] !== "number") throw new Error("Invalid data");
+
+                switch (decodedData[0]) {
+                    case 0:
+                        // Standard procedure
+                        if (!qos) return;
+
+                        let m0Data = decodedData.slice(1) as [nonce: number, api: string, input: unknown];
+                        if (typeof m0Data[0] !== "number" || typeof m0Data[1] !== "string") throw new Error("Invalid data");
+
+                        let procedure = server.procedures[m0Data[1]];
+                        if (!procedure || procedure.signature !== "procedure") {
+                            socket.send(1, encode([
+                                0, m0Data[0], false, "Procedure not found"
+                            ]));
+                        }
+
+                        try {
+                            if (!server.localState.get(id)) server.localState.set(id, {});
+
+                            let result = await procedure.execute(server.globalState, server.localState.get(id), m0Data[2]);
+                            socket.send(1, encode([
+                                0, m0Data[0], true, result
+                            ]));
+                        } catch (e) {
+                            socket.send(1, encode([
+                                0, m0Data[0], false, e instanceof Error ? e.message : e
+                            ]));
+                        }
+                        break;
+                    case 1:
+                        // Streaming procedure
+                        if (!qos) return;
+
+                        let m1Data = decodedData.slice(1) as [nonce: number, api: string, input: unknown];
+                        if (typeof m1Data[0] !== "number" || typeof m1Data[1] !== "string") throw new Error("Invalid data");
+
+                        let streamingProcedure = server.procedures[m1Data[1]];
+                        if (
+                            !streamingProcedure ||
+                            streamingProcedure.signature !== "streamingProcedure"
+                        ) {
+                            socket.send(1, encode([
+                                1, m1Data[0], 2, 0, "Procedure not found"
+                            ]));
+                            return;
+                        }
+
+                        let packetCount = 0;
+                        try {
+                            if (!server.localState.get(id)) server.localState.set(id, {});
+
+                            let stream = streamingProcedure.execute(server.globalState, server.localState.get(id), m1Data[2]);
+                            for await (let packet of stream) {
+                                let waitACK = socket.send(1, encode([
+                                    1, m1Data[0], 0, packetCount++, packet
+                                ]));
+
+                                if (!streamingProcedure.burst) {
+                                    await waitACK;
+                                }
+                            }
+
+                            socket.send(1, encode([
+                                1, m1Data[0], 1, packetCount
+                            ]));
+                        } catch (e) {
+                            socket.send(1, encode([
+                                1, m1Data[0], 2, packetCount, e instanceof Error ? e.message : e
+                            ]));
+                        }
+                        break;
+                    case 2:
+                        // Ordered event transmission
+                        if (!qos) return;
+
+                        let m2Data = decodedData.slice(1) as [event: string, nonce: number, ...args: unknown[]];
+                        if (!this.m2RecvCounter.has(m2Data[0])) this.m2RecvCounter.set(m2Data[0], 0);
+                        if (typeof m2Data[1] !== "number") throw new Error("Invalid data");
+                        if (!this.m2Table[m2Data[0]]) this.m2Table[m2Data[0]] = new Map();
+
+                        this.m2Table[m2Data[0]].set(m2Data[1], m2Data.slice(2));
+                        if (m2Data[1] === this.m2RecvCounter.get(m2Data[0])) {
+                            for (; ;) {
+                                let data = this.m2Table[m2Data[0]].get(this.m2RecvCounter.get(m2Data[0]));
+                                if (!data) break;
+
+                                this.m2Table[m2Data[0]].delete(this.m2RecvCounter.get(m2Data[0]));
+                                this.m2RecvCounter.set(m2Data[0], this.m2RecvCounter.get(m2Data[0]) + 1);
+
+                                originalEmit(m2Data[0], ...data);
+                            }
+                        }
+                        break;
+                }
+            } catch (e) {
+                console.log(e)
+            }
+        });
+    }
+}
