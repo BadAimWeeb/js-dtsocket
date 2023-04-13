@@ -10,10 +10,17 @@ let server = new Server({
     publicKey: k.publicKey
 });
 
+type EventTable = {
+    csEvents: {},
+    scEvents: {
+        test: (a: number) => void
+    }
+};
+
 let gState: {
     stored?: number;
 } = {};
-let pGen = InitProcedureGenerator<typeof gState>();
+let pGen = InitProcedureGenerator<typeof gState, {}, EventTable>();
 
 const procedureTable = {
     add: pGen
@@ -48,6 +55,11 @@ const procedureTable = {
                 yield i;
                 await new Promise((resolve) => setTimeout(resolve, 100));
             }
+        }),
+    broadcast: pGen
+        .input(z.number())
+        .resolve((gState, lState, input, server) => {
+            server.emit("test", input);
         })
 };
 
@@ -55,12 +67,7 @@ const procedureTable = {
 let dtServer = new DTSocketServer<
     typeof gState,
     {},
-    {
-        csEvents: {},
-        scEvents: {
-            test: (a: number) => void
-        }
-    },
+    EventTable,
     typeof procedureTable
 >(procedureTable, gState);
 
@@ -197,6 +204,27 @@ console.log("- Exit stream");
 localPass = localPass && internalCounter === 5;
 pass.push(localPass);
 console.log(`Status: ${localPass ? "Passed" : "Failed"}`);
+console.log();
+
+// Test 10
+let rng7 = Math.random();
+let res10 = new Promise<number>((resolve) => {
+    dtClient1.on("test", (data) => {
+        resolve(data);
+    });
+});
+let res11 = new Promise<number>((resolve) => {
+    dtClient2.on("test", (data) => {
+        resolve(data);
+    });
+});
+dtClient1.p.broadcast(rng7);
+let res12 = await res10;
+let res13 = await res11;
+pass.push(res12 === rng7 && res13 === rng7);
+console.log("Test 10:", res12 === rng7 && res13 === rng7 ? "Passed" : "Failed");
+console.log(`- Input: ${rng7}`);
+console.log(`- Output: ${res12} ${res13}`);
 console.log();
 
 console.log("All tests passed:", pass.every(x => x) ? "Yes" : "No");

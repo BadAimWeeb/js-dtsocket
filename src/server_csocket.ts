@@ -4,6 +4,7 @@ import { DTSocketServer } from "./server.js";
 import { type Procedure, type StreamingProcedure } from "./procedures.js";
 
 import { encode, decode } from "msgpack-lite";
+import { DTSocketServer_BroadcastOperator } from "./server_broadcast.js";
 
 export interface DTSocketServer_CSocket<
     GlobalState,
@@ -16,7 +17,7 @@ export interface DTSocketServer_CSocket<
             [event: string]: (...args: any[]) => void
         }
     },
-    T extends { [api: string]: Procedure<any, any, GlobalState, {}> | StreamingProcedure<any, any, GlobalState, {}>; }
+    T extends { [api: string]: Procedure<any, any, EventTable, GlobalState, {}> | StreamingProcedure<any, any, EventTable, GlobalState, {}>; }
 > extends EventEmitter {
     on(event: keyof CSEventTable<EventTable>, callback: (...args: CSEventTable<EventTable>[keyof CSEventTable<EventTable>]) => void): this;
     on(event: string | symbol, callback: (...args: any[]) => void): this;
@@ -36,7 +37,7 @@ export class DTSocketServer_CSocket<
             [event: string]: (...args: any[]) => void
         }
     },
-    T extends { [api: string]: Procedure<any, any, GlobalState, {}> | StreamingProcedure<any, any, GlobalState, {}>; }
+    T extends { [api: string]: Procedure<any, any, EventTable, GlobalState, {}> | StreamingProcedure<any, any, EventTable, GlobalState, {}>; }
 > extends EventEmitter {
     private m2Table: {
         [event: string]: Map<number, unknown[]>
@@ -56,6 +57,8 @@ export class DTSocketServer_CSocket<
 
             return true;
         }
+
+        this.join(id);
 
         socket.on("data", async (qos, data) => {
             try {
@@ -80,7 +83,7 @@ export class DTSocketServer_CSocket<
                         try {
                             if (!server.localState.get(id)) server.localState.set(id, {});
 
-                            let result = await procedure.execute(server.globalState, server.localState.get(id), m0Data[2]);
+                            let result = await procedure.execute(server.globalState, server.localState.get(id), m0Data[2], this.server);
                             socket.send(1, encode([
                                 0, m0Data[0], true, result
                             ]));
@@ -112,7 +115,7 @@ export class DTSocketServer_CSocket<
                         try {
                             if (!server.localState.get(id)) server.localState.set(id, {});
 
-                            let stream = streamingProcedure.execute(server.globalState, server.localState.get(id), m1Data[2]);
+                            let stream = streamingProcedure.execute(server.globalState, server.localState.get(id), m1Data[2], this.server);
                             for await (let packet of stream) {
                                 let waitACK = socket.send(1, encode([
                                     1, m1Data[0], 0, packetCount++, packet
@@ -159,5 +162,34 @@ export class DTSocketServer_CSocket<
                 console.log(e)
             }
         });
+    }
+
+    join(room: string) {
+        if (!this.server.rooms.has(room)) this.server.rooms.set(room, new Set());
+        this.server.rooms.get(room).add(this.id);
+    }
+
+    leave(room: string) {
+        if (!this.server.rooms.has(room)) return;
+        this.server.rooms.get(room).delete(this.id);
+    }
+
+    leaveAll() {
+        for (let room of this.server.rooms.keys()) {
+            this.leave(room);
+        }
+    }
+
+    get rooms() {
+        let rooms = new Set<string>();
+        for (let [room, clients] of this.server.rooms) {
+            if (clients.has(this.id)) rooms.add(room);
+        }
+
+        return rooms;
+    }
+
+    to(room: string | string[]) {
+        return new DTSocketServer_BroadcastOperator(this.server, [...room], [this.id]);
     }
 }

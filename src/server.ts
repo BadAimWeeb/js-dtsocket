@@ -4,6 +4,7 @@ import { DTSocketServer_CSocket } from "./server_csocket.js";
 import { EventEmitter } from "events";
 import { subtle } from "crypto";
 import { Buffer } from "buffer";
+import { DTSocketServer_BroadcastOperator } from "./server_broadcast.js";
 
 export interface DTSocketServer<
     GlobalState extends {
@@ -21,14 +22,17 @@ export interface DTSocketServer<
         }
     },
     T extends {
-        [api: string]: Procedure<any, any, GlobalState, LocalState> | StreamingProcedure<any, any, GlobalState, LocalState>
+        [api: string]: Procedure<any, any, EventTable, GlobalState, LocalState> | StreamingProcedure<any, any, EventTable, GlobalState, LocalState>
     }
 > extends EventEmitter {
     on(event: "session", callback: (cSocket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, T>) => void): this;
     on(event: string | symbol, callback: (...args: any[]) => void): this;
 
-    emit(event: "session", cSocket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, T>): boolean;
-    emit(event: string | symbol, ...args: any[]): boolean;
+    originalEmit(event: "session", cSocket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, T>): boolean;
+    originalEmit(event: string | symbol, ...args: any[]): boolean;
+
+    emit<T extends keyof EventTable["scEvents"]>(event: T, ...args: Parameters<EventTable["scEvents"][T]>): boolean;
+    emit(event: string, ...args: any[]): boolean;
 }
 
 export class DTSocketServer<
@@ -47,7 +51,7 @@ export class DTSocketServer<
         }
     },
     T extends {
-        [api: string]: Procedure<any, any, GlobalState, LocalState> | StreamingProcedure<any, any, GlobalState, LocalState>
+        [api: string]: Procedure<any, any, EventTable, GlobalState, LocalState> | StreamingProcedure<any, any, EventTable, GlobalState, LocalState>
     } = {}
 > extends EventEmitter {
     globalState: GlobalState;
@@ -57,6 +61,15 @@ export class DTSocketServer<
 
     constructor(public procedures: T, defaultGlobalState?: GlobalState) {
         super();
+        this.originalEmit = this.emit.bind(this);
+        this.emit = (event: string | symbol, ...args: any[]) => {
+            // Broadcast to all sockets
+            for (const cSocket of this.cSockets.values()) {
+                cSocket.emit(event, ...args);
+            }
+
+            return true;
+        }
         this.globalState = defaultGlobalState || {} as GlobalState;
     }
 
@@ -64,7 +77,11 @@ export class DTSocketServer<
         const socketID = Buffer.from(new Uint8Array(await subtle.digest("SHA-512", Buffer.from(socket.connectionPK)))).toString("hex");
         const cSocket = new DTSocketServer_CSocket(socketID, socket, this);
 
-        this.emit("session", cSocket);
+        this.originalEmit("session", cSocket);
         this.cSockets.set(socketID, cSocket);
+    }
+
+    to(room: string | string[]) {
+        return new DTSocketServer_BroadcastOperator(this, [...room]);
     }
 }
