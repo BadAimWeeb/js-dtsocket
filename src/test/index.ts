@@ -58,7 +58,7 @@ const procedureTable = {
         }),
     broadcast: pGen
         .input(z.number())
-        .resolve((gState, lState, input, server) => {
+        .resolve((gState, lState, input, socket, server) => {
             server.emit("test", input);
         })
 };

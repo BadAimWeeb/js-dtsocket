@@ -1,4 +1,5 @@
 import type { DTSocketServer } from "./server";
+import type { DTSocketServer_CSocket } from "./server_csocket";
 
 export type EventTableBase = {
     csEvents: {
@@ -28,10 +29,22 @@ export const InitProcedureGenerator = <
 
 function createProcedure<GlobalState, LocalState, TIn, EventTable extends EventTableBase>(iCallback: (input: unknown) => TIn) {
     return {
-        resolve: <TOut>(oCallback: (gState: GlobalState, lState: LocalState, input: TIn, server: DTSocketServer<GlobalState, LocalState, EventTable, any>) => TOut | PromiseLike<TOut>) => {
+        resolve: <TOut>(oCallback: (
+            gState: GlobalState, 
+            lState: LocalState, 
+            input: TIn, 
+            socket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, any>,
+            server: DTSocketServer<GlobalState, LocalState, EventTable, any>
+        ) => TOut | PromiseLike<TOut>) => {
             return new Procedure<TIn, TOut, EventTable, GlobalState, LocalState>(iCallback, oCallback);
         },
-        streamResolve: <TOut>(oCallback: (gState: GlobalState, lState: LocalState, input: TIn, server: DTSocketServer<GlobalState, LocalState, EventTable, any>) => AsyncIterable<TOut>, burst?: boolean) => {
+        streamResolve: <TOut>(oCallback: (
+            gState: GlobalState, 
+            lState: LocalState, 
+            input: TIn, 
+            socket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, any>,
+            server: DTSocketServer<GlobalState, LocalState, EventTable, any>
+        ) => AsyncIterable<TOut>, burst?: boolean) => {
             return new StreamingProcedure<TIn, TOut, EventTable, GlobalState, LocalState>(iCallback, oCallback, burst || false);
         }
     }
@@ -41,11 +54,23 @@ export class Procedure<TIn, TOut, EventTable extends EventTableBase, GlobalState
     readonly signature = "procedure";
     constructor(
         private iCallback: (input: unknown) => TIn,
-        private oCallback: (gState: GlobalState, lState: LocalState, input: TIn, server: DTSocketServer<GlobalState, LocalState, EventTable, any>) => TOut | PromiseLike<TOut>
+        private oCallback: (
+            gState: GlobalState, 
+            lState: LocalState, 
+            input: TIn, 
+            socket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, any>,
+            server: DTSocketServer<GlobalState, LocalState, EventTable, any>
+        ) => TOut | PromiseLike<TOut>
     ) { }
 
-    execute(gState: GlobalState, lState: LocalState, input: TIn, server: DTSocketServer<GlobalState, LocalState, EventTable, any>) {
-        return this.oCallback(gState, lState, this.iCallback(input), server);
+    execute(
+        gState: GlobalState, 
+        lState: LocalState, 
+        input: TIn, 
+        socket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, any>,
+        server: DTSocketServer<GlobalState, LocalState, EventTable, any>
+    ) {
+        return this.oCallback(gState, lState, this.iCallback(input), socket, server);
     }
 }
 
@@ -53,11 +78,23 @@ export class StreamingProcedure<TIn, TOut, EventTable extends EventTableBase, Gl
     readonly signature = "streamingProcedure";
     constructor(
         private iCallback: (input: unknown) => TIn,
-        private oCallback: (gState: GlobalState, lState: LocalState, input: TIn, server: DTSocketServer<GlobalState, LocalState, EventTable, any>) => AsyncIterable<TOut>,
+        private oCallback: (
+            gState: GlobalState, 
+            lState: LocalState, 
+            input: TIn, 
+            socket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, any>,
+            server: DTSocketServer<GlobalState, LocalState, EventTable, any>
+        ) => AsyncIterable<TOut>,
         public burst: boolean
     ) { }
 
-    execute(gState: GlobalState, lState: LocalState, input: TIn, server: DTSocketServer<GlobalState, LocalState, EventTable, any>) {
-        return this.oCallback(gState, lState, this.iCallback(input), server);
+    execute(
+        gState: GlobalState, 
+        lState: LocalState,
+        input: TIn, 
+        socket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, any>,
+        server: DTSocketServer<GlobalState, LocalState, EventTable, any>
+    ) {
+        return this.oCallback(gState, lState, this.iCallback(input), socket, server);
     }
 }

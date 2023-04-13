@@ -83,7 +83,7 @@ export class DTSocketServer_CSocket<
                         try {
                             if (!server.localState.get(id)) server.localState.set(id, {});
 
-                            let result = await procedure.execute(server.globalState, server.localState.get(id), m0Data[2], this.server);
+                            let result = await procedure.execute(server.globalState, server.localState.get(id), m0Data[2], this, this.server);
                             socket.send(1, encode([
                                 0, m0Data[0], true, result
                             ]));
@@ -115,7 +115,7 @@ export class DTSocketServer_CSocket<
                         try {
                             if (!server.localState.get(id)) server.localState.set(id, {});
 
-                            let stream = streamingProcedure.execute(server.globalState, server.localState.get(id), m1Data[2], this.server);
+                            let stream = streamingProcedure.execute(server.globalState, server.localState.get(id), m1Data[2], this, this.server);
                             for await (let packet of stream) {
                                 let waitACK = socket.send(1, encode([
                                     1, m1Data[0], 0, packetCount++, packet
