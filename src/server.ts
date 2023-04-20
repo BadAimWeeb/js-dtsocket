@@ -2,7 +2,6 @@ import type { Procedure, StreamingProcedure } from "./procedures.js";
 import type { Socket } from "./types.js";
 import { DTSocketServer_CSocket } from "./server_csocket.js";
 import { EventEmitter } from "events";
-import { subtle } from "crypto";
 import { Buffer } from "buffer";
 import { DTSocketServer_BroadcastOperator } from "./server_broadcast.js";
 
@@ -74,7 +73,7 @@ export class DTSocketServer<
     }
 
     async processSession(socket: Socket) {
-        const socketID = Buffer.from(new Uint8Array(await subtle.digest("SHA-512", Buffer.from(socket.connectionPK)))).toString("hex");
+        const socketID = Buffer.from(new Uint8Array(await crypto.subtle.digest("SHA-512", Buffer.from(socket.connectionPK)))).toString("hex");
         const cSocket = new DTSocketServer_CSocket(socketID, socket, this);
 
         this.originalEmit("session", cSocket);
