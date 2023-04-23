@@ -81,6 +81,6 @@ export class DTSocketServer<
     }
 
     to(room: string | string[]) {
-        return new DTSocketServer_BroadcastOperator(this, [...room]);
+        return new DTSocketServer_BroadcastOperator(this, [].concat(room));
     }
 }
