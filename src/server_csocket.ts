@@ -46,7 +46,7 @@ export class DTSocketServer_CSocket<
     private m2SendCounter: Map<keyof SCEventTable<EventTable>, number> = new Map();
 
     get lState() {
-        return this.server.localState.get(this.id) || {};
+        return this.server.localState.get(this.id) || {} as LocalState;
     }
 
     constructor(public id: string, public socket: Socket, public server: DTSocketServer<GlobalState, LocalState, EventTable, T>) {

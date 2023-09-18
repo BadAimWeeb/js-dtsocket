@@ -1,6 +1,6 @@
 {
   "name": "@badaimweeb/js-dtsocket",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Type-safe API + Event data transfer layer over ProtoV2/V2d",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
