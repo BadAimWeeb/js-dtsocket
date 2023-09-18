@@ -1,6 +1,6 @@
 {
   "name": "@badaimweeb/js-dtsocket",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Type-safe API + Event data transfer layer over ProtoV2/V2d",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -20,7 +20,7 @@
   },
   "homepage": "https://github.com/BadAimWeeb/js-dtsocket#readme",
   "devDependencies": {
-    "@badaimweeb/js-protov2d": "^0.4.0",
+    "@badaimweeb/js-protov2d": "^0.4.2",
     "@types/msgpack-lite": "^0.1.8",
     "@types/node": "^18.14.6",
     "typescript": "^4.9.5",
