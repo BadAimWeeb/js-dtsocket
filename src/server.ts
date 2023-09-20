@@ -25,9 +25,11 @@ export interface DTSocketServer<
     }
 > extends EventEmitter {
     on(event: "session", callback: (cSocket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, T>) => void): this;
+    on<T extends keyof EventTable["csEvents"]>(event: T, callback: (...args: Parameters<EventTable["csEvents"][T]>) => void): this;
     on(event: string | symbol, callback: (...args: any[]) => void): this;
 
     originalEmit(event: "session", cSocket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, T>): boolean;
+    originalEmit<T extends keyof EventTable["csEvents"]>(event: T, ...args: Parameters<EventTable["csEvents"][T]>): boolean;
     originalEmit(event: string | symbol, ...args: any[]): boolean;
 
     emit<T extends keyof EventTable["scEvents"]>(event: T, ...args: Parameters<EventTable["scEvents"][T]>): boolean;

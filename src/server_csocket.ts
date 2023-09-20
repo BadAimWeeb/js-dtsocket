@@ -158,6 +158,7 @@ export class DTSocketServer_CSocket<
                                 this.m2RecvCounter.set(m2Data[0], this.m2RecvCounter.get(m2Data[0]) + 1);
 
                                 originalEmit(m2Data[0], ...data);
+                                if (m2Data[0] !== "session") this.server.originalEmit(m2Data[0], ...data);
                             }
                         }
                         break;
