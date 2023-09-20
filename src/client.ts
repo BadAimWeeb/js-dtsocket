@@ -26,10 +26,10 @@ type StreamingProcedureObject<T extends object> = {
 type ExtractEventTable<T extends DTSocketServer<any, any, any, any>> = T extends DTSocketServer<any, any, infer E, any> ? E : never;
 
 export interface DTSocketClient<T extends DTSocketServer<any, any, any, any>> extends EventEmitter {
-    on(event: keyof ExtractEventTable<T>["scEvents"], callback: (...args: Parameters<ExtractEventTable<T>["scEvents"][keyof ExtractEventTable<T>["scEvents"]]>) => void): this;
+    on<K extends keyof ExtractEventTable<T>["scEvents"]>(event: K, callback: (...args: Parameters<ExtractEventTable<T>["scEvents"][K]>) => void): this;
     on(event: string | symbol, callback: (...args: any[]) => void): this;
 
-    emit(event: keyof ExtractEventTable<T>["csEvents"], ...args: Parameters<ExtractEventTable<T>["csEvents"][keyof ExtractEventTable<T>["csEvents"]]>): boolean;
+    emit<K extends keyof ExtractEventTable<T>["csEvents"]>(event: K, ...args: Parameters<ExtractEventTable<T>["csEvents"][K]>): boolean;
     emit(event: string | symbol, ...args: any[]): boolean;
 };
 

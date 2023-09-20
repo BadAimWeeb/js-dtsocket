@@ -19,10 +19,10 @@ export interface DTSocketServer_CSocket<
     },
     T extends { [api: string]: Procedure<any, any, EventTable, GlobalState, {}> | StreamingProcedure<any, any, EventTable, GlobalState, {}>; }
 > extends EventEmitter {
-    on(event: keyof CSEventTable<EventTable>, callback: (...args: CSEventTable<EventTable>[keyof CSEventTable<EventTable>]) => void): this;
+    on<T extends keyof CSEventTable<EventTable>>(event: T, callback: (...args: CSEventTable<EventTable>[T]) => void): this;
     on(event: string | symbol, callback: (...args: any[]) => void): this;
 
-    emit(event: keyof SCEventTable<EventTable>, ...args: SCEventTable<EventTable>[keyof SCEventTable<EventTable>]): boolean;
+    emit<T extends keyof SCEventTable<EventTable>>(event: T, ...args: SCEventTable<EventTable>[T]): boolean;
     emit(event: string | symbol, ...args: any[]): boolean;
 }
 
