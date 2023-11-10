@@ -27,11 +27,11 @@ export const InitProcedureGenerator = <
     }
 }
 
-function createProcedure<GlobalState, LocalState, TIn, EventTable extends EventTableBase>(iCallback: (input: unknown) => TIn) {
+function createProcedure<GlobalState extends { [key: string]: any; }, LocalState extends { [key: string]: any; }, TIn, EventTable extends EventTableBase>(iCallback: (input: unknown) => TIn) {
     return {
         resolve: <TOut>(oCallback: (
             gState: GlobalState, 
-            lState: LocalState, 
+            lState: Partial<LocalState>, 
             input: TIn, 
             socket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, any>,
             server: DTSocketServer<GlobalState, LocalState, EventTable, any>
@@ -40,7 +40,7 @@ function createProcedure<GlobalState, LocalState, TIn, EventTable extends EventT
         },
         streamResolve: <TOut>(oCallback: (
             gState: GlobalState, 
-            lState: LocalState, 
+            lState: Partial<LocalState>, 
             input: TIn, 
             socket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, any>,
             server: DTSocketServer<GlobalState, LocalState, EventTable, any>
@@ -56,7 +56,7 @@ export class Procedure<TIn, TOut, EventTable extends EventTableBase, GlobalState
         private iCallback: (input: unknown) => TIn,
         private oCallback: (
             gState: GlobalState, 
-            lState: LocalState, 
+            lState: Partial<LocalState>, 
             input: TIn, 
             socket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, any>,
             server: DTSocketServer<GlobalState, LocalState, EventTable, any>
@@ -65,7 +65,7 @@ export class Procedure<TIn, TOut, EventTable extends EventTableBase, GlobalState
 
     execute(
         gState: GlobalState, 
-        lState: LocalState, 
+        lState: Partial<LocalState>, 
         input: TIn, 
         socket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, any>,
         server: DTSocketServer<GlobalState, LocalState, EventTable, any>
@@ -80,7 +80,7 @@ export class StreamingProcedure<TIn, TOut, EventTable extends EventTableBase, Gl
         private iCallback: (input: unknown) => TIn,
         private oCallback: (
             gState: GlobalState, 
-            lState: LocalState, 
+            lState: Partial<LocalState>, 
             input: TIn, 
             socket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, any>,
             server: DTSocketServer<GlobalState, LocalState, EventTable, any>
@@ -90,7 +90,7 @@ export class StreamingProcedure<TIn, TOut, EventTable extends EventTableBase, Gl
 
     execute(
         gState: GlobalState, 
-        lState: LocalState,
+        lState: Partial<LocalState>,
         input: TIn, 
         socket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, any>,
         server: DTSocketServer<GlobalState, LocalState, EventTable, any>

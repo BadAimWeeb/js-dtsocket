@@ -53,12 +53,13 @@ export class DTSocketServer<
     },
     T extends {
         [api: string]: Procedure<any, any, EventTable, GlobalState, LocalState> | StreamingProcedure<any, any, EventTable, GlobalState, LocalState>
-    } = {}
+    },
+    ImplSocket extends Socket = Socket
 > extends EventEmitter {
     globalState: GlobalState;
     localState: Map<string, Partial<LocalState>> = new Map();
     rooms: Map<string, Set<string>> = new Map();
-    cSockets: Map<string, DTSocketServer_CSocket<GlobalState, LocalState, EventTable, T>> = new Map();
+    cSockets: Map<string, DTSocketServer_CSocket<GlobalState, LocalState, EventTable, T, ImplSocket>> = new Map();
 
     constructor(public procedures: T, defaultGlobalState?: GlobalState) {
         super();
@@ -74,7 +75,7 @@ export class DTSocketServer<
         this.globalState = defaultGlobalState || {} as GlobalState;
     }
 
-    async processSession(socket: Socket) {
+    async processSession(socket: ImplSocket) {
         const socketID = Buffer.from(new Uint8Array(await crypto.subtle.digest("SHA-512", Buffer.from(socket.connectionPK)))).toString("hex");
         const cSocket = new DTSocketServer_CSocket(socketID, socket, this);
 
@@ -83,6 +84,6 @@ export class DTSocketServer<
     }
 
     to(room: string | string[]) {
-        return new DTSocketServer_BroadcastOperator(this, [].concat(room));
+        return new DTSocketServer_BroadcastOperator(this, ([] as string[]).concat(room));
     }
 }

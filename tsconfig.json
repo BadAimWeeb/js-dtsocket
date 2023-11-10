@@ -5,7 +5,8 @@
         "moduleResolution": "Node",
         "outDir": "dist",
         "allowSyntheticDefaultImports": true,
-        "declaration": true
+        "declaration": true,
+        "strict": true
     },
     "include": ["src/**/*"],
     "exclude": ["node_modules", "**/*.spec.ts"]

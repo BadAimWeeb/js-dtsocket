@@ -37,12 +37,12 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any, any>> extend
     nonceCounter = 0;
     private m0CallbackTable: Map<
         number /** nonce */,
-        [resolve: (value: unknown) => void, reject: (reason?: any) => void] /** callback */
+        [resolve: (value: any) => void, reject: (reason?: any) => void] /** callback */
     > = new Map();
 
     private m1CallbackTable: Map<
         number /** nonce */,
-        [stream: (packetNo: number, value: unknown) => void, end: (totalPacket: number) => void, fault: (totalPacket: number, reason?: any) => void] /** callback */
+        [stream: (packetNo: number, value: any) => void, end: (totalPacket: number) => void, fault: (totalPacket: number, reason?: any) => void] /** callback */
     > = new Map();
 
     private m2Table: {
@@ -53,7 +53,7 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any, any>> extend
 
     procedure = <APIKey extends StandandProcedureArray<P<T>>>(x: APIKey) => {
         return (input: Parameters<P<T>[APIKey]["execute"]>[2]) => {
-            return new Promise((resolve, reject) => {
+            return new Promise<Awaited<ReturnType<P<T>[APIKey]["execute"]>>>((resolve, reject) => {
                 let nonce = this.nonceCounter++;
                 this.m0CallbackTable.set(nonce, [resolve, reject]);
                 this.socket.send(1, encode(input === undefined ? [
@@ -61,12 +61,12 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any, any>> extend
                 ] : [
                     0, nonce, x, input
                 ]));
-            }) as Promise<Awaited<ReturnType<P<T>[APIKey]["execute"]>>>;
+            });
         }
     }
 
     p = new Proxy<StandardProcedureObject<P<T>>>({} as any, {
-        get: <APIKey extends StandandProcedureArray<P<T>>>(_, p: APIKey | string | symbol) => {
+        get: <APIKey extends StandandProcedureArray<P<T>>>(_: unknown, p: APIKey | string | symbol) => {
             return this.procedure(p as APIKey);
         }
     });
@@ -181,7 +181,7 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any, any>> extend
     }
 
     sp = new Proxy<StreamingProcedureObject<P<T>>>({} as any, {
-        get: <APIKey extends StreamingProcedureArray<P<T>>>(_, p: APIKey | string | symbol) => {
+        get: <APIKey extends StreamingProcedureArray<P<T>>>(_: unknown, p: APIKey | string | symbol) => {
             return this.streamingProcedure(p as APIKey);
         }
     });
@@ -246,11 +246,11 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any, any>> extend
                     this.m2Table[m2Data[0]].set(m2Data[1], m2Data.slice(2));
                     if (m2Data[1] === this.m2RecvCounter.get(m2Data[0])) {
                         for (; ;) {
-                            let data = this.m2Table[m2Data[0]].get(this.m2RecvCounter.get(m2Data[0]));
+                            let data = this.m2Table[m2Data[0]].get(this.m2RecvCounter.get(m2Data[0])!);
                             if (!data) break;
 
-                            this.m2Table[m2Data[0]].delete(this.m2RecvCounter.get(m2Data[0]));
-                            this.m2RecvCounter.set(m2Data[0], this.m2RecvCounter.get(m2Data[0]) + 1);
+                            this.m2Table[m2Data[0]].delete(this.m2RecvCounter.get(m2Data[0])!);
+                            this.m2RecvCounter.set(m2Data[0], this.m2RecvCounter.get(m2Data[0])! + 1);
 
                             originalEmit(m2Data[0], ...data);
                         }
@@ -271,7 +271,7 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any, any>> extend
             socket.send(1, encode([
                 2, event, this.m2SendCounter.get(event), ...args
             ]));
-            this.m2SendCounter.set(event, this.m2SendCounter.get(event) + 1);
+            this.m2SendCounter.set(event, this.m2SendCounter.get(event)! + 1);
 
             return true;
         }
