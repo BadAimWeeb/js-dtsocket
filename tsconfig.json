@@ -6,6 +6,7 @@
         "outDir": "dist",
         "allowSyntheticDefaultImports": true,
         "declaration": true,
+        "skipLibCheck": true,
         "strict": true
     },
     "include": ["src/**/*"],

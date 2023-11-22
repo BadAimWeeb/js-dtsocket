@@ -1,30 +1,13 @@
-import type { DTSocketServer } from "./server";
+import type { DTSocketServer } from "./server.js";
+import type { GetTypeContext, ServerContext, SymbolEventTableType } from "./types.js";
 
-export interface DTSocketServer_BroadcastOperator<
-    EventTable extends {
-        csEvents: {
-            [event: string]: (...args: any[]) => void
-        },
-        scEvents: {
-            [event: string]: (...args: any[]) => void
-        }
-    }
-> {
-    emit<T extends keyof EventTable["scEvents"]>(event: T, ...args: Parameters<EventTable["scEvents"][T]>): boolean;
+export interface DTSocketServer_BroadcastOperator<Context extends ServerContext> {
+    emit<T extends keyof GetTypeContext<Context, SymbolEventTableType>["scEvents"]>(event: T, ...args: Parameters<GetTypeContext<Context, SymbolEventTableType>["scEvents"][T]>): boolean;
     emit(event: string, ...args: any[]): boolean;
 }
 
-export class DTSocketServer_BroadcastOperator<
-    EventTable extends {
-        csEvents: {
-            [event: string]: (...args: any[]) => void
-        },
-        scEvents: {
-            [event: string]: (...args: any[]) => void
-        }
-    }
-> {
-    constructor(private server: DTSocketServer<any, any, EventTable, any>, public rooms: string[], public excludeSockets: string[] = []) { }
+export class DTSocketServer_BroadcastOperator<Context extends ServerContext> {
+    constructor(private server: DTSocketServer<Context>, public rooms: string[], public excludeSockets: string[] = []) { }
 
     emit(event: string, ...args: any[]) {
         let sockets = new Set<string>();
@@ -45,7 +28,7 @@ export class DTSocketServer_BroadcastOperator<
         return true;
     }
 
-    to(room: string | string[]) {
+    to(room: string | string[]): DTSocketServer_BroadcastOperator<Context> {
         return new DTSocketServer_BroadcastOperator(this.server, this.rooms.concat(room), this.excludeSockets);
     }
 }

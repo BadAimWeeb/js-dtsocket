@@ -1,39 +1,37 @@
 import { encode, decode } from "msgpack-lite";
 import type { DTSocketServer } from "./server.js";
-import type { Socket, CSEventTable, SCEventTable } from "./types.js";
+import type { CSEventTable, SCEventTable, ServerContext, GetTypeContext, SymbolEventTableType, SymbolProceduresType, SymbolSocketImplType, Socket } from "./types.js";
 import type { Procedure, StreamingProcedure } from "./procedures.js";
 import { EventEmitter } from "events";
 
-type P<T extends DTSocketServer<any, any, any, any>> = T extends DTSocketServer<any, any, any, infer P> ? P : never;
+type ExtractContext<T extends DTSocketServer> = T extends DTSocketServer<infer C> ? C : never;
 type AsyncIterableUnwrap<T> = T extends AsyncIterable<infer U> ? U : never;
 
 type StandandProcedureArray<T extends object> = {
-    [K in keyof T]: T[K] extends Procedure<any, any, any, any> ? K : never
+    [K in keyof T]: T[K] extends Procedure<any, any, any> ? K : never
 }[keyof T];
 
 type StreamingProcedureArray<T extends object> = {
-    [K in keyof T]: T[K] extends StreamingProcedure<any, any, any, any> ? K : never
+    [K in keyof T]: T[K] extends StreamingProcedure<any, any, any> ? K : never
 }[keyof T];
 
 type StandardProcedureObject<T extends object> = {
-    [K in StandandProcedureArray<T>]: T[K] extends Procedure<infer I, infer O, any, any> ? (input: I) => Promise<Awaited<O>> : never
+    [K in StandandProcedureArray<T>]: T[K] extends Procedure<infer I, infer O, any> ? (input: I) => Promise<Awaited<O>> : never
 };
 
 type StreamingProcedureObject<T extends object> = {
-    [K in StreamingProcedureArray<T>]: T[K] extends StreamingProcedure<infer I, infer O, any, any> ? (input: I) => AsyncGenerator<O, void, unknown> : never
+    [K in StreamingProcedureArray<T>]: T[K] extends StreamingProcedure<infer I, infer O, any> ? (input: I) => AsyncGenerator<O, void, unknown> : never
 };
 
-type ExtractEventTable<T extends DTSocketServer<any, any, any, any>> = T extends DTSocketServer<any, any, infer E, any> ? E : never;
-
-export interface DTSocketClient<T extends DTSocketServer<any, any, any, any>> extends EventEmitter {
-    on<K extends keyof ExtractEventTable<T>["scEvents"]>(event: K, callback: (...args: Parameters<ExtractEventTable<T>["scEvents"][K]>) => void): this;
+export interface DTSocketClient<T extends DTSocketServer, SocketImpl extends Socket = Socket, Context extends ServerContext = ExtractContext<T>> extends EventEmitter {
+    on<K extends keyof GetTypeContext<Context, SymbolEventTableType>["scEvents"]>(event: K, callback: (...args: Parameters<GetTypeContext<Context, SymbolEventTableType>["scEvents"][K]>) => void): this;
     on(event: string | symbol, callback: (...args: any[]) => void): this;
 
-    emit<K extends keyof ExtractEventTable<T>["csEvents"]>(event: K, ...args: Parameters<ExtractEventTable<T>["csEvents"][K]>): boolean;
+    emit<K extends keyof GetTypeContext<Context, SymbolEventTableType>["csEvents"]>(event: K, ...args: Parameters<GetTypeContext<Context, SymbolEventTableType>["csEvents"][K]>): boolean;
     emit(event: string | symbol, ...args: any[]): boolean;
 };
 
-export class DTSocketClient<T extends DTSocketServer<any, any, any, any>> extends EventEmitter {
+export class DTSocketClient<T extends DTSocketServer, SocketImpl extends Socket = Socket, Context extends ServerContext = ExtractContext<T>> extends EventEmitter {
     nonceCounter = 0;
     private m0CallbackTable: Map<
         number /** nonce */,
@@ -48,12 +46,16 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any, any>> extend
     private m2Table: {
         [event: string]: Map<number, unknown[]>
     } = {};
-    private m2RecvCounter: Map<keyof CSEventTable<ExtractEventTable<T>>, number> = new Map();
-    private m2SendCounter: Map<keyof SCEventTable<ExtractEventTable<T>>, number> = new Map();
+    private m2RecvCounter: Map<keyof CSEventTable<GetTypeContext<Context, SymbolEventTableType>>, number> = new Map();
+    private m2SendCounter: Map<keyof SCEventTable<GetTypeContext<Context, SymbolEventTableType>>, number> = new Map();
 
-    procedure = <APIKey extends StandandProcedureArray<P<T>>>(x: APIKey) => {
-        return (input: Parameters<P<T>[APIKey]["execute"]>[2]) => {
-            return new Promise<Awaited<ReturnType<P<T>[APIKey]["execute"]>>>((resolve, reject) => {
+    procedure: (
+        <APIKey extends StandandProcedureArray<GetTypeContext<Context, SymbolProceduresType>>>(x: APIKey) =>
+            (input: Parameters<GetTypeContext<Context, SymbolProceduresType>[APIKey]["execute"]>[2]) =>
+                Promise<Awaited<ReturnType<GetTypeContext<Context, SymbolProceduresType>[APIKey]["execute"]>>>
+    ) = <APIKey extends StandandProcedureArray<GetTypeContext<Context, SymbolProceduresType>>>(x: APIKey) => {
+        return (input: Parameters<GetTypeContext<Context, SymbolProceduresType>[APIKey]["execute"]>[2]) => {
+            return new Promise<Awaited<ReturnType<GetTypeContext<Context, SymbolProceduresType>[APIKey]["execute"]>>>((resolve, reject) => {
                 let nonce = this.nonceCounter++;
                 this.m0CallbackTable.set(nonce, [resolve, reject]);
                 this.socket.send(1, encode(input === undefined ? [
@@ -65,123 +67,127 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any, any>> extend
         }
     }
 
-    p = new Proxy<StandardProcedureObject<P<T>>>({} as any, {
-        get: <APIKey extends StandandProcedureArray<P<T>>>(_: unknown, p: APIKey | string | symbol) => {
+    p: StandardProcedureObject<GetTypeContext<Context, SymbolProceduresType>> = new Proxy<StandardProcedureObject<GetTypeContext<Context, SymbolProceduresType>>>({} as any, {
+        get: <APIKey extends StandandProcedureArray<GetTypeContext<Context, SymbolProceduresType>>>(_: unknown, p: APIKey | string | symbol) => {
             return this.procedure(p as APIKey);
         }
     });
 
-    streamingProcedure = <APIKey extends StreamingProcedureArray<P<T>>>(x: APIKey) => {
-        return (input: Parameters<P<T>[APIKey]["execute"]>[2]) => {
-            let that = this;
-            return (async function* () {
-                type StreamReturnType = AsyncIterableUnwrap<ReturnType<P<T>[APIKey]["execute"]>>;
+    streamingProcedure: (
+        <APIKey extends StreamingProcedureArray<GetTypeContext<Context, SymbolProceduresType>>>(x: APIKey) =>
+            (input: Parameters<GetTypeContext<Context, SymbolProceduresType>[APIKey]["execute"]>[2]) => 
+                AsyncGenerator<AsyncIterableUnwrap<ReturnType<GetTypeContext<Context, SymbolProceduresType>[APIKey]["execute"]>>, void, unknown>
+    ) = <APIKey extends StreamingProcedureArray<GetTypeContext<Context, SymbolProceduresType>>>(x: APIKey) => {
+            return (input: Parameters<GetTypeContext<Context, SymbolProceduresType>[APIKey]["execute"]>[2]) => {
+                let that = this;
+                return (async function* () {
+                    type StreamReturnType = AsyncIterableUnwrap<ReturnType<GetTypeContext<Context, SymbolProceduresType>[APIKey]["execute"]>>;
 
-                let nonce = that.nonceCounter++;
-                let packetNo = 0;
-                let endPacketNo = -1;
-                let packetList: Map<number, StreamReturnType> = new Map();
-                let eventChannel = new EventEmitter();
-                let pendingEnd = false;
-                let pendingThrow = false;
-                let pendingThrowReason: any;
+                    let nonce = that.nonceCounter++;
+                    let packetNo = 0;
+                    let endPacketNo = -1;
+                    let packetList: Map<number, StreamReturnType> = new Map();
+                    let eventChannel = new EventEmitter();
+                    let pendingEnd = false;
+                    let pendingThrow = false;
+                    let pendingThrowReason: any;
 
-                that.m1CallbackTable.set(nonce, [
-                    async (remotePacketNo, value: StreamReturnType) => {
-                        packetList.set(packetNo, value);
-                        if (packetNo === remotePacketNo) {
-                            for (; ;) {
-                                if (!packetList.has(packetNo)) break;
-                                let packet = packetList.get(packetNo);
+                    that.m1CallbackTable.set(nonce, [
+                        async (remotePacketNo, value: StreamReturnType) => {
+                            packetList.set(packetNo, value);
+                            if (packetNo === remotePacketNo) {
+                                for (; ;) {
+                                    if (!packetList.has(packetNo)) break;
+                                    let packet = packetList.get(packetNo);
 
-                                let rec = eventChannel.emit("data", packet);
-                                if (rec) {
-                                    packetList.delete(packetNo);
-                                    packetNo++;
-                                } else {
-                                    await new Promise<void>((resolve) => {
-                                        eventChannel.once("ready", () => {
-                                            resolve();
+                                    let rec = eventChannel.emit("data", packet);
+                                    if (rec) {
+                                        packetList.delete(packetNo);
+                                        packetNo++;
+                                    } else {
+                                        await new Promise<void>((resolve) => {
+                                            eventChannel.once("ready", () => {
+                                                resolve();
+                                            });
+                                            setTimeout(resolve, 50);
                                         });
-                                        setTimeout(resolve, 50);
-                                    });
+                                    }
+                                }
+
+                                if (endPacketNo >= packetNo) {
+                                    if (pendingEnd) eventChannel.emit("end");
+                                    if (pendingThrow) eventChannel.emit("fault", pendingThrowReason);
                                 }
                             }
-
-                            if (endPacketNo >= packetNo) {
-                                if (pendingEnd) eventChannel.emit("end");
-                                if (pendingThrow) eventChannel.emit("fault", pendingThrowReason);
+                        },
+                        (totalPacket) => {
+                            if (totalPacket === packetNo) {
+                                let first = eventChannel.emit("end");
+                                if (!first) {
+                                    eventChannel.once("ready", () => {
+                                        eventChannel.emit("end");
+                                    });
+                                }
+                            } else {
+                                endPacketNo = totalPacket;
+                                pendingEnd = true;
+                            }
+                        },
+                        (totalPacket, reason) => {
+                            if (totalPacket === packetNo) {
+                                let first = eventChannel.emit("fault", reason);
+                                if (!first) {
+                                    eventChannel.once("ready", () => {
+                                        eventChannel.emit("fault", reason);
+                                    });
+                                }
+                            } else {
+                                endPacketNo = totalPacket;
+                                pendingThrow = true;
+                                pendingThrowReason = reason;
                             }
                         }
-                    },
-                    (totalPacket) => {
-                        if (totalPacket === packetNo) {
-                            let first = eventChannel.emit("end");
-                            if (!first) {
-                                eventChannel.once("ready", () => {
-                                    eventChannel.emit("end");
+                    ]);
+
+                    that.socket.send(1, encode(input === undefined ? [
+                        1, nonce, x
+                    ] : [
+                        1, nonce, x, input
+                    ]));
+
+                    for (; ;) {
+                        try {
+                            yield await new Promise<StreamReturnType>((resolve, reject) => {
+                                eventChannel.once("data", (value: StreamReturnType) => {
+                                    resolve(value);
                                 });
-                            }
-                        } else {
-                            endPacketNo = totalPacket;
-                            pendingEnd = true;
-                        }
-                    },
-                    (totalPacket, reason) => {
-                        if (totalPacket === packetNo) {
-                            let first = eventChannel.emit("fault", reason);
-                            if (!first) {
-                                eventChannel.once("ready", () => {
-                                    eventChannel.emit("fault", reason);
+
+                                eventChannel.once("end", () => {
+                                    reject(["end"]);
                                 });
-                            }
-                        } else {
-                            endPacketNo = totalPacket;
-                            pendingThrow = true;
-                            pendingThrowReason = reason;
-                        }
-                    }
-                ]);
 
-                that.socket.send(1, encode(input === undefined ? [
-                    1, nonce, x
-                ] : [
-                    1, nonce, x, input
-                ]));
+                                eventChannel.once("fault", (reason: any) => {
+                                    reject(["fault", reason]);
+                                });
 
-                for (; ;) {
-                    try {
-                        yield await new Promise<StreamReturnType>((resolve, reject) => {
-                            eventChannel.once("data", (value: StreamReturnType) => {
-                                resolve(value);
+                                eventChannel.emit("ready");
                             });
-
-                            eventChannel.once("end", () => {
-                                reject(["end"]);
-                            });
-
-                            eventChannel.once("fault", (reason: any) => {
-                                reject(["fault", reason]);
-                            });
-
-                            eventChannel.emit("ready");
-                        });
-                    } catch (e) {
-                        if (Array.isArray(e)) {
-                            if (e[0] === "end") {
-                                break;
-                            } else if (e[0] === "fault") {
-                                throw e[1];
+                        } catch (e) {
+                            if (Array.isArray(e)) {
+                                if (e[0] === "end") {
+                                    break;
+                                } else if (e[0] === "fault") {
+                                    throw e[1];
+                                }
                             }
                         }
                     }
-                }
-            })();
+                })();
+            }
         }
-    }
 
-    sp = new Proxy<StreamingProcedureObject<P<T>>>({} as any, {
-        get: <APIKey extends StreamingProcedureArray<P<T>>>(_: unknown, p: APIKey | string | symbol) => {
+    sp: StreamingProcedureObject<GetTypeContext<Context, SymbolProceduresType>> = new Proxy<StreamingProcedureObject<GetTypeContext<Context, SymbolProceduresType>>>({} as any, {
+        get: <APIKey extends StreamingProcedureArray<GetTypeContext<Context, SymbolProceduresType>>>(_: unknown, p: APIKey | string | symbol) => {
             return this.streamingProcedure(p as APIKey);
         }
     });
@@ -262,7 +268,7 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any, any>> extend
         }
     }
 
-    constructor(private socket: Socket) {
+    constructor(private socket: SocketImpl) {
         super();
         let originalEmit = this.emit.bind(this);
 
@@ -279,8 +285,8 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any, any>> extend
         let u = this._handleData.bind(this, originalEmit);
         this.socket.on("data", u);
 
-        function handleResumeSocket(this: DTSocketClient<T>) {
-            this.socket.on("resumeFailed", (newSocket: Socket) => {
+        function handleResumeSocket(this: DTSocketClient<T, SocketImpl, Context>) {
+            this.socket.on("resumeFailed", newSocket => {
                 // throw all pending promises
                 for (let [nonce, callback] of this.m0CallbackTable) {
                     callback[1]("Old connection closed");
@@ -294,7 +300,7 @@ export class DTSocketClient<T extends DTSocketServer<any, any, any, any>> extend
                 this.m1CallbackTable.clear();
 
                 this.socket.removeListener("data", u);
-                this.socket = newSocket;
+                this.socket = newSocket as any as SocketImpl;
                 this.socket.on("data", u);
                 handleResumeSocket.call(this);
             });

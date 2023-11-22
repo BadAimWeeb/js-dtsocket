@@ -1,6 +1,6 @@
-import { connect, Server, keyGeneration } from "@badaimweeb/js-protov2d";
+import { connect, Server, keyGeneration, Session } from "@badaimweeb/js-protov2d";
 import z from "zod";
-import { DTSocketClient, DTSocketServer, InitProcedureGenerator } from "../index.js";
+import { DTSocketClient, DTSocketServer, InitProcedureGenerator, Socket, type ServerContext } from "../index.js";
 
 let k = await keyGeneration();
 
@@ -20,32 +20,36 @@ type EventTable = {
 let gState: {
     stored?: number;
 } = {};
-let pGen = InitProcedureGenerator<typeof gState, {}, EventTable>();
 
+type LState = {
+    stored?: number;
+};
+
+let pGen = InitProcedureGenerator<ServerContext<typeof gState, LState, EventTable, Session>>();
 const procedureTable = {
     add: pGen
         .input(z.object({ a: z.number(), b: z.number() }))
-        .resolve((gState, lState, input) => {
+        .resolve((gState, lState, input, socket): number => {
             return input.a + input.b;
         }),
     store: pGen
         .input(z.number())
-        .resolve((gState, lState, input) => {
+        .resolve((gState, lState, input): void => {
             gState["stored"] = input;
         }),
     get: pGen
         .input(z.void())
-        .resolve((gState, lState, input) => {
+        .resolve((gState, lState, input): number | void => {
             return gState["stored"];
         }),
     storeLocal: pGen
         .input(z.number())
-        .resolve((gState, lState, input) => {
+        .resolve((gState, lState, input): void => {
             lState["stored"] = input;
         }),
     getLocal: pGen
         .input(z.void())
-        .resolve((gState, lState, input) => {
+        .resolve((gState, lState, input): number | void => {
             return lState["stored"];
         }),
     streamCounter: pGen
@@ -58,21 +62,16 @@ const procedureTable = {
         }),
     broadcast: pGen
         .input(z.number())
-        .resolve((gState, lState, input, socket, server) => {
-            server.emit("test", input);
+        .resolve((gState, lState, input, socket): void => {
+            socket.server.emit("test", input);
         })
 };
 
-// typescript doesn't support partial type inference yet. why
-let dtServer = new DTSocketServer<
-    typeof gState,
-    {},
-    EventTable,
-    typeof procedureTable
->(procedureTable, gState);
+let dtServer = new DTSocketServer<ServerContext<typeof gState, LState, EventTable, Session, typeof procedureTable>>(procedureTable, gState);
 
 // Get port
-let port = server.port;
+console.log(server.wsServer.address());
+let port = server.wsServer.address().port as number;
 console.log("Server listening on port", port);
 
 server.on("connection", session => {
@@ -82,18 +81,18 @@ server.on("connection", session => {
 // Create client
 let client1 = await connect({
     url: `ws://localhost:${port}`,
-    publicKey: {
+    publicKeys: [{
         type: "key",
-        key: k.publicKey
-    }
+        value: k.publicKey
+    }]
 });
 
 let client2 = await connect({
     url: `ws://localhost:${port}`,
-    publicKey: {
+    publicKeys: [{
         type: "hash",
-        hash: k.publicKeyHash
-    }
+        value: k.publicKeyHash
+    }]
 });
 
 let dtClient1 = new DTSocketClient<typeof dtServer>(client1);

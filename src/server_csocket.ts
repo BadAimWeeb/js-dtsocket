@@ -1,57 +1,30 @@
 import { EventEmitter } from "events";
-import type { CSEventTable, SCEventTable, Socket } from "./types";
-import { DTSocketServer } from "./server.js";
-import { type Procedure, type StreamingProcedure } from "./procedures.js";
+import type { CSEventTable, GetTypeContext, SCEventTable, ServerContext, Socket, SymbolEventTableType, SymbolLocalStateType, SymbolSocketImplType } from "./types";
+import type { DTSocketServer } from "./server.js";
 
 import { encode, decode } from "msgpack-lite";
 import { DTSocketServer_BroadcastOperator } from "./server_broadcast.js";
 
-export interface DTSocketServer_CSocket<
-    GlobalState,
-    LocalState,
-    EventTable extends {
-        csEvents: {
-            [event: string]: (...args: any[]) => void
-        },
-        scEvents: {
-            [event: string]: (...args: any[]) => void
-        }
-    },
-    T extends { [api: string]: Procedure<any, any, EventTable, GlobalState, LocalState> | StreamingProcedure<any, any, EventTable, GlobalState, LocalState>; },
-    ImplSocket extends Socket
-> extends EventEmitter {
-    on<T extends keyof CSEventTable<EventTable>>(event: T, callback: (...args: CSEventTable<EventTable>[T]) => void): this;
+export interface DTSocketServer_CSocket<Context extends ServerContext> extends EventEmitter {
+    on<T extends keyof CSEventTable<GetTypeContext<Context, SymbolEventTableType>>>(event: T, callback: (...args: CSEventTable<GetTypeContext<Context, SymbolEventTableType>>[T]) => void): this;
     on(event: string | symbol, callback: (...args: any[]) => void): this;
 
-    emit<T extends keyof SCEventTable<EventTable>>(event: T, ...args: SCEventTable<EventTable>[T]): boolean;
+    emit<T extends keyof SCEventTable<GetTypeContext<Context, SymbolEventTableType>>>(event: T, ...args: SCEventTable<GetTypeContext<Context, SymbolEventTableType>>[T]): boolean;
     emit(event: string | symbol, ...args: any[]): boolean;
 }
 
-export class DTSocketServer_CSocket<
-    GlobalState extends { [key: string]: any },
-    LocalState extends { [key: string]: any },
-    EventTable extends {
-        csEvents: {
-            [event: string]: (...args: any[]) => void
-        },
-        scEvents: {
-            [event: string]: (...args: any[]) => void
-        }
-    },
-    T extends { [api: string]: Procedure<any, any, EventTable, GlobalState, LocalState> | StreamingProcedure<any, any, EventTable, GlobalState, LocalState>; },
-    ImplSocket extends Socket = Socket
-> extends EventEmitter {
+export class DTSocketServer_CSocket<Context extends ServerContext, SocketImpl extends Socket = GetTypeContext<Context, SymbolSocketImplType>> extends EventEmitter {
     private m2Table: {
         [event: string]: Map<number, unknown[]>
     } = {};
-    private m2RecvCounter: Map<keyof CSEventTable<EventTable>, number> = new Map();
-    private m2SendCounter: Map<keyof SCEventTable<EventTable>, number> = new Map();
+    private m2RecvCounter: Map<string | number, number> = new Map();
+    private m2SendCounter: Map<string | number, number> = new Map();
 
-    get lState() {
-        return this.server.localState.get(this.id) || {} as LocalState;
+    get lState(): Partial<GetTypeContext<Context, SymbolLocalStateType>> {
+        return this.server.localState.get(this.id) || {} as GetTypeContext<Context, SymbolLocalStateType>;
     }
 
-    constructor(public id: string, public socket: ImplSocket, public server: DTSocketServer<GlobalState, LocalState, EventTable, T, ImplSocket>) {
+    constructor(public id: string, public socket: SocketImpl, public server: DTSocketServer<Context>) {
         super();
         let originalEmit = this.emit.bind(this);
         this.emit = (event: string, ...args: any[]) => {
@@ -89,7 +62,7 @@ export class DTSocketServer_CSocket<
                         try {
                             if (!server.localState.get(id)) server.localState.set(id, {});
 
-                            let result = await procedure.execute(server.globalState, server.localState.get(id)!, m0Data[2], this, this.server);
+                            let result = await procedure.execute(server.globalState, server.localState.get(id)!, m0Data[2], this);
                             socket.send(1, encode([
                                 0, m0Data[0], true, result
                             ]));
@@ -121,7 +94,7 @@ export class DTSocketServer_CSocket<
                         try {
                             if (!server.localState.get(id)) server.localState.set(id, {});
 
-                            let stream = streamingProcedure.execute(server.globalState, server.localState.get(id)!, m1Data[2], this, this.server);
+                            let stream = streamingProcedure.execute(server.globalState, server.localState.get(id)!, m1Data[2], this);
                             for await (let packet of stream) {
                                 let waitACK = socket.send(1, encode([
                                     1, m1Data[0], 0, packetCount++, packet

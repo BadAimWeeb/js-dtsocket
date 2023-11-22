@@ -1,67 +1,50 @@
-import type { Procedure, StreamingProcedure } from "./procedures.js";
-import type { Socket } from "./types.js";
+import type { ServerContext, SymbolGlobalStateType, SymbolLocalStateType, SymbolEventTableType, SymbolProceduresType, SymbolSocketImplType, GetTypeContext, DefaultServerContext } from "./types.js";
 import { DTSocketServer_CSocket } from "./server_csocket.js";
 import { EventEmitter } from "events";
 import { Buffer } from "buffer";
 import { DTSocketServer_BroadcastOperator } from "./server_broadcast.js";
 
-export interface DTSocketServer<
-    GlobalState extends {
-        [key: string]: any
-    },
-    LocalState extends {
-        [key: string]: any
-    },
-    EventTable extends {
-        csEvents: {
-            [event: string]: (...args: any[]) => void
-        },
-        scEvents: {
-            [event: string]: (...args: any[]) => void
-        }
-    },
-    T extends {
-        [api: string]: Procedure<any, any, EventTable, GlobalState, LocalState> | StreamingProcedure<any, any, EventTable, GlobalState, LocalState>
-    }
-> extends EventEmitter {
-    on(event: "session", callback: (cSocket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, T>) => void): this;
-    on<T extends keyof EventTable["csEvents"]>(event: T, callback: (...args: Parameters<EventTable["csEvents"][T]>) => void): this;
+export interface DTSocketServer<Context extends ServerContext> extends EventEmitter {
+    on(event: "session", callback: (cSocket: DTSocketServer_CSocket<Context>) => void): this;
+    on<T extends keyof GetTypeContext<Context, SymbolEventTableType>["csEvents"]>(event: T, callback: (...args: Parameters<GetTypeContext<Context, SymbolEventTableType>["csEvents"][T]>) => void): this;
     on(event: string | symbol, callback: (...args: any[]) => void): this;
 
-    originalEmit(event: "session", cSocket: DTSocketServer_CSocket<GlobalState, LocalState, EventTable, T>): boolean;
-    originalEmit<T extends keyof EventTable["csEvents"]>(event: T, ...args: Parameters<EventTable["csEvents"][T]>): boolean;
+    originalEmit(event: "session", cSocket: DTSocketServer_CSocket<Context>): boolean;
+    originalEmit<T extends keyof GetTypeContext<Context, SymbolEventTableType>["csEvents"]>(event: T, ...args: Parameters<GetTypeContext<Context, SymbolEventTableType>["csEvents"][T]>): boolean;
     originalEmit(event: string | symbol, ...args: any[]): boolean;
 
-    emit<T extends keyof EventTable["scEvents"]>(event: T, ...args: Parameters<EventTable["scEvents"][T]>): boolean;
+    emit<T extends keyof GetTypeContext<Context, SymbolEventTableType>["scEvents"]>(event: T, ...args: Parameters<GetTypeContext<Context, SymbolEventTableType>["scEvents"][T]>): boolean;
     emit(event: string, ...args: any[]): boolean;
 }
 
-export class DTSocketServer<
-    GlobalState extends {
-        [key: string]: any
-    },
-    LocalState extends {
-        [key: string]: any
-    },
-    EventTable extends {
-        csEvents: {
-            [event: string]: (...args: any[]) => void
-        },
-        scEvents: {
-            [event: string]: (...args: any[]) => void
-        }
-    },
-    T extends {
-        [api: string]: Procedure<any, any, EventTable, GlobalState, LocalState> | StreamingProcedure<any, any, EventTable, GlobalState, LocalState>
-    },
-    ImplSocket extends Socket = Socket
-> extends EventEmitter {
-    globalState: GlobalState;
-    localState: Map<string, Partial<LocalState>> = new Map();
-    rooms: Map<string, Set<string>> = new Map();
-    cSockets: Map<string, DTSocketServer_CSocket<GlobalState, LocalState, EventTable, T, ImplSocket>> = new Map();
 
-    constructor(public procedures: T, defaultGlobalState?: GlobalState) {
+// GlobalState extends {
+//     [key: string]: any
+// },
+// LocalState extends {
+//     [key: string]: any
+// },
+// EventTable extends {
+//     csEvents: {
+//         [event: string]: (...args: any[]) => void
+//     },
+//     scEvents: {
+//         [event: string]: (...args: any[]) => void
+//     }
+// },
+// T extends {
+//     [api: string]: Procedure<any, any, EventTable, GlobalState, LocalState> | StreamingProcedure<any, any, EventTable, GlobalState, LocalState>
+// },
+// ImplSocket extends Socket = Socket
+
+
+export class DTSocketServer<Context extends ServerContext = DefaultServerContext> extends EventEmitter {
+    globalState: GetTypeContext<Context, SymbolGlobalStateType>;
+    localState: Map<string, Partial<GetTypeContext<Context, SymbolLocalStateType>>> = new Map();
+    rooms: Map<string, Set<string>> = new Map();
+    cSockets: Map<string, DTSocketServer_CSocket<Context>> = new Map();
+
+    constructor(public procedures: GetTypeContext<Context, SymbolProceduresType>, defaultGlobalState?: GetTypeContext<Context, SymbolGlobalStateType>) {
         super();
         this.originalEmit = this.emit.bind(this);
         this.emit = (event: string | symbol, ...args: any[]) => {
@@ -72,10 +55,10 @@ export class DTSocketServer<
 
             return true;
         }
-        this.globalState = defaultGlobalState || {} as GlobalState;
+        this.globalState = defaultGlobalState || {} as GetTypeContext<Context, SymbolGlobalStateType>;
     }
 
-    async processSession(socket: ImplSocket) {
+    async processSession(socket: GetTypeContext<Context, SymbolSocketImplType>) {
         const socketID = Buffer.from(new Uint8Array(await crypto.subtle.digest("SHA-512", Buffer.from(socket.connectionPK)))).toString("hex");
         const cSocket = new DTSocketServer_CSocket(socketID, socket, this);
 

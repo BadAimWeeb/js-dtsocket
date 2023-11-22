@@ -20,7 +20,6 @@
   },
   "homepage": "https://github.com/BadAimWeeb/js-dtsocket#readme",
   "devDependencies": {
-    "@badaimweeb/js-protov2d": "^0.4.2",
     "@types/msgpack-lite": "^0.1.8",
     "@types/node": "^18.14.6",
     "typescript": "^4.9.5",
@@ -28,6 +27,10 @@
   },
   "type": "module",
   "dependencies": {
-    "msgpack-lite": "^0.1.26"
+    "msgpack-lite": "^0.1.26",
+    "tiny-typed-emitter": "^2.1.0"
+  },
+  "optionalDependencies": {
+    "@badaimweeb/js-protov2d": "^1.0.0"
   }
 }
