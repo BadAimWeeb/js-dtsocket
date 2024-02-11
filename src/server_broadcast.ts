@@ -22,7 +22,9 @@ export class DTSocketServer_BroadcastOperator<Context extends ServerContext> {
         }
 
         for (const socket of sockets) {
-            this.server.cSockets.get(socket)?.emit(event, ...args);
+            try {
+                this.server.cSockets.get(socket)?.emit(event, ...args);
+            } catch { }
         }
 
         return true;

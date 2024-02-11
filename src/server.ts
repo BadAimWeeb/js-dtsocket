@@ -17,27 +17,6 @@ export interface DTSocketServer<Context extends ServerContext> extends EventEmit
     emit(event: string, ...args: any[]): boolean;
 }
 
-
-// GlobalState extends {
-//     [key: string]: any
-// },
-// LocalState extends {
-//     [key: string]: any
-// },
-// EventTable extends {
-//     csEvents: {
-//         [event: string]: (...args: any[]) => void
-//     },
-//     scEvents: {
-//         [event: string]: (...args: any[]) => void
-//     }
-// },
-// T extends {
-//     [api: string]: Procedure<any, any, EventTable, GlobalState, LocalState> | StreamingProcedure<any, any, EventTable, GlobalState, LocalState>
-// },
-// ImplSocket extends Socket = Socket
-
-
 export class DTSocketServer<Context extends ServerContext = DefaultServerContext> extends EventEmitter {
     globalState: GetTypeContext<Context, SymbolGlobalStateType>;
     localState: Map<string, Partial<GetTypeContext<Context, SymbolLocalStateType>>> = new Map();
@@ -58,12 +37,23 @@ export class DTSocketServer<Context extends ServerContext = DefaultServerContext
         this.globalState = defaultGlobalState || {} as GetTypeContext<Context, SymbolGlobalStateType>;
     }
 
-    async processSession(socket: GetTypeContext<Context, SymbolSocketImplType>) {
+    async processSession<T extends GetTypeContext<Context, SymbolSocketImplType>>(socket: T): Promise<DTSocketServer_CSocket<Context, T>> {
         const socketID = Buffer.from(new Uint8Array(await crypto.subtle.digest("SHA-512", Buffer.from(socket.connectionPK)))).toString("hex");
         const cSocket = new DTSocketServer_CSocket(socketID, socket, this);
 
         this.originalEmit("session", cSocket);
         this.cSockets.set(socketID, cSocket);
+
+        return cSocket;
+    }
+
+    async removeSession(socket: GetTypeContext<Context, SymbolSocketImplType>) {
+        const socketID = Buffer.from(new Uint8Array(await crypto.subtle.digest("SHA-512", Buffer.from(socket.connectionPK)))).toString("hex");
+        this.cSockets.delete(socketID);
+
+        for (let rooms of this.rooms.values()) {
+            rooms.delete(socketID);
+        }
     }
 
     to(room: string | string[]) {

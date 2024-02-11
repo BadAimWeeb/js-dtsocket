@@ -285,26 +285,26 @@ export class DTSocketClient<T extends DTSocketServer, SocketImpl extends Socket 
         let u = this._handleData.bind(this, originalEmit);
         this.socket.on("data", u);
 
-        function handleResumeSocket(this: DTSocketClient<T, SocketImpl, Context>) {
-            this.socket.on("resumeFailed", newSocket => {
+        function handleResumeSocket(client: DTSocketClient<T, SocketImpl, Context>) {
+            client.socket.once("resumeFailed", newSocket => {
                 // throw all pending promises
-                for (let [nonce, callback] of this.m0CallbackTable) {
+                for (let [_, callback] of client.m0CallbackTable) {
                     callback[1]("Old connection closed");
                 }
 
-                for (let [nonce, callback] of this.m1CallbackTable) {
+                for (let [_, callback] of client.m1CallbackTable) {
                     callback[2](0, "Old connection closed");
                 }
 
-                this.m0CallbackTable.clear();
-                this.m1CallbackTable.clear();
+                client.m0CallbackTable.clear();
+                client.m1CallbackTable.clear();
 
-                this.socket.removeListener("data", u);
-                this.socket = newSocket as any as SocketImpl;
-                this.socket.on("data", u);
-                handleResumeSocket.call(this);
+                client.socket.removeListener("data", u);
+                client.socket = newSocket as any as SocketImpl;
+                client.socket.on("data", u);
+                handleResumeSocket(client);
             });
         }
-        handleResumeSocket.call(this);
+        handleResumeSocket(this);
     }
 }

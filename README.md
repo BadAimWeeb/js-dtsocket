@@ -70,7 +70,7 @@ export type ServerDef = typeof dtServer;
 // Handle client connection
 v2dServer.on("connection", async (socket) => {
     // Upgrade to DTSocket
-    let dtSocket = await dtServer.upgrade(socket);
+    let dtSocket = await dtServer.processSession(socket);
 
     // Handle client events
     dtSocket.on("test", (a) => {
@@ -79,6 +79,16 @@ v2dServer.on("connection", async (socket) => {
         // Emit server event
         dtSocket.emit("test", a);
     });
+});
+
+// ...or you can handle it this way
+dtServer.on("session", dtSocket => {
+    // do stuff
+});
+
+// It's important to drop the connection when the client disconnects and timed out.
+v2dServer.on("dropConnection", (socket) => {
+    dtServer.removeSession(socket);
 });
 ```
 
