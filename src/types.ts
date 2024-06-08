@@ -21,22 +21,16 @@ export type EventType<T extends object> = {
 export type CSEventTable<T extends { csEvents: { [event: string]: (...args: any[]) => void } }> = EventType<T["csEvents"]>;
 export type SCEventTable<T extends { scEvents: { [event: string]: (...args: any[]) => void } }> = EventType<T["scEvents"]>;
 
-const SymbolGlobalState: unique symbol = Symbol();
-const SymbolLocalState: unique symbol = Symbol();
-const SymbolEventTable: unique symbol = Symbol();
-const SymbolProcedures: unique symbol = Symbol();
-const SymbolSocketImpl: unique symbol = Symbol();
-
 /** WARNING: ONLY USE THIS ON TYPES. */
-export type SymbolGlobalStateType = typeof SymbolGlobalState;
+export type SymbolGlobalStateType = "GlobalState";
 /** WARNING: ONLY USE THIS ON TYPES. */
-export type SymbolLocalStateType = typeof SymbolLocalState;
+export type SymbolLocalStateType = "LocalState";
 /** WARNING: ONLY USE THIS ON TYPES. */
-export type SymbolEventTableType = typeof SymbolEventTable;
+export type SymbolEventTableType = "EventTable";
 /** WARNING: ONLY USE THIS ON TYPES. */
-export type SymbolProceduresType = typeof SymbolProcedures;
+export type SymbolProceduresType = "Procedures";
 /** WARNING: ONLY USE THIS ON TYPES. */
-export type SymbolSocketImplType = typeof SymbolSocketImpl;
+export type SymbolSocketImplType = "SocketImpl";
 
 export type ServerContext<
     GlobalState extends { [key: string]: any; } = { [key: string]: any },
@@ -55,18 +49,18 @@ export type ServerContext<
         StreamingProcedure<any, any, ServerContext<GlobalState, LocalState, EventTable, any, DefaultServerContext[SymbolProceduresType]>>
     }
 > = {
-    [SymbolGlobalState]: GlobalState;
-    [SymbolLocalState]: LocalState;
-    [SymbolEventTable]: EventTable;
-    [SymbolProcedures]: Procedures;
-    [SymbolSocketImpl]: SocketImpl;
+    GlobalState: GlobalState;
+    LocalState: LocalState;
+    EventTable: EventTable;
+    Procedures: Procedures;
+    SocketImpl: SocketImpl;
 };
 
 export type DefaultServerContext = {
-    [SymbolGlobalState]: { [key: string]: any };
-    [SymbolLocalState]: { [key: string]: any };
-    [SymbolEventTable]: { csEvents: { [event: string]: (...args: any[]) => void }, scEvents: { [event: string]: (...args: any[]) => void } };
-    [SymbolProcedures]: {
+    GlobalState: { [key: string]: any };
+    LocalState: { [key: string]: any };
+    EventTable: { csEvents: { [event: string]: (...args: any[]) => void }, scEvents: { [event: string]: (...args: any[]) => void } };
+    Procedures: {
         [api: string]: Procedure<
             any, any,
             ServerContext<any, any, any, any, any>
@@ -76,8 +70,8 @@ export type DefaultServerContext = {
             ServerContext<any, any, any, any, any>
         >
     };
-    [SymbolSocketImpl]: Socket;
+    SocketImpl: Socket;
 };
 
-export type GetTypeContext<A extends ServerContext<any, any, any, any, any>, SuppliedSymbol extends SymbolGlobalStateType | SymbolLocalStateType | SymbolProceduresType | SymbolSocketImplType | SymbolEventTableType> =
+export type GetTypeContext<A extends ServerContext<any, any, any, any, any>, SuppliedSymbol extends "GlobalState" | "LocalState" | "EventTable" | "Procedures" | "SocketImpl"> =
     A[SuppliedSymbol] extends undefined ? DefaultServerContext[SuppliedSymbol] : A[SuppliedSymbol];
