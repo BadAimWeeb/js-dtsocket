@@ -1,5 +1,5 @@
 import type { DTSocketServer_CSocket } from "./server_csocket";
-import type { ServerContext, GetTypeContext, SymbolGlobalStateType, SymbolLocalStateType, Socket } from "./types";
+import type { ServerContext, GetTypeContext, SymbolGlobalStateType, SymbolLocalStateType } from "./types";
 
 export type EventTableBase = {
     csEvents: {
@@ -11,38 +11,41 @@ export type EventTableBase = {
 };
 
 export const InitProcedureGenerator: <Context extends ServerContext>() => {
+    // Bulk of typing is done here
     input: <TIn>(parser: {
         parse: (input: unknown) => TIn
-    }) => ReturnType<typeof createProcedure<TIn, Context>>
-} = <Context extends ServerContext>() => {
-    return {
-        input: <TIn>(parser: {
-            parse: (input: unknown) => TIn
-        }) => {
-            return createProcedure<TIn, Context>(parser.parse);
-        }
+    }) => {
+        resolve: <TOut>(
+            oCallback: (
+                gState: GetTypeContext<Context, SymbolGlobalStateType>,
+                lState: Partial<GetTypeContext<Context, SymbolLocalStateType>>,
+                input: TIn,
+                socket: DTSocketServer_CSocket<Context>
+            ) => TOut | PromiseLike<TOut>
+        ) => Procedure<TIn, TOut, Context>,
+
+        streamResolve: <TOut>(
+            oCallback: (
+                gState: GetTypeContext<Context, SymbolGlobalStateType>,
+                lState: Partial<GetTypeContext<Context, SymbolLocalStateType>>,
+                input: TIn,
+                socket: DTSocketServer_CSocket<Context>
+            ) => AsyncIterable<TOut>,
+            burst?: boolean
+        ) => StreamingProcedure<TIn, TOut, Context>
     }
+} = () => {
+    return {
+        input: (parser: any) => createProcedure(parser.parse)
+    } as any;
 }
 
-function createProcedure<TIn, Context extends ServerContext>(iCallback: (input: unknown) => TIn): ({
-    resolve: <TOut>(oCallback: (
-        gState: GetTypeContext<Context, SymbolGlobalStateType>, 
-        lState: Partial<GetTypeContext<Context, SymbolLocalStateType>>, 
-        input: TIn, 
-        socket: DTSocketServer_CSocket<Context>
-    ) => TOut | PromiseLike<TOut>) => Procedure<TIn, TOut, Context>,
-    streamResolve: <TOut>(oCallback: (
-        gState: GetTypeContext<Context, SymbolGlobalStateType>, 
-        lState: Partial<GetTypeContext<Context, SymbolLocalStateType>>, 
-        input: TIn, 
-        socket: DTSocketServer_CSocket<Context>
-    ) => AsyncIterable<TOut>, burst?: boolean) => StreamingProcedure<TIn, TOut, Context>
-}) {
+const createProcedure = (iCallback: (input: unknown) => any) => {
     return {
-        resolve: (oCallback) => {
+        resolve: (oCallback: any) => {
             return new Procedure(iCallback, oCallback);
         },
-        streamResolve: (oCallback, burst?: boolean) => {
+        streamResolve: (oCallback: any, burst?: boolean) => {
             return new StreamingProcedure(iCallback, oCallback, burst || false);
         }
     }
@@ -53,18 +56,18 @@ export class Procedure<TIn, TOut, Context extends ServerContext> {
     constructor(
         private iCallback: (input: unknown) => TIn,
         private oCallback: (
-            gState: GetTypeContext<Context, SymbolGlobalStateType>, 
-            lState: Partial<GetTypeContext<Context, SymbolLocalStateType>>, 
-            input: TIn, 
-            socket: DTSocketServer_CSocket<Context, Socket>
+            gState: GetTypeContext<Context, SymbolGlobalStateType>,
+            lState: Partial<GetTypeContext<Context, SymbolLocalStateType>>,
+            input: TIn,
+            socket: DTSocketServer_CSocket<Context>
         ) => TOut | PromiseLike<TOut>
     ) { }
 
     execute(
-        gState: GetTypeContext<Context, SymbolGlobalStateType>, 
-        lState: Partial<Partial<GetTypeContext<Context, SymbolLocalStateType>>>, 
-        input: TIn, 
-        socket: DTSocketServer_CSocket<Context, Socket>
+        gState: GetTypeContext<Context, SymbolGlobalStateType>,
+        lState: Partial<Partial<GetTypeContext<Context, SymbolLocalStateType>>>,
+        input: TIn,
+        socket: DTSocketServer_CSocket<Context>
     ) {
         return this.oCallback(gState, lState, this.iCallback(input), socket);
     }
@@ -75,19 +78,19 @@ export class StreamingProcedure<TIn, TOut, Context extends ServerContext> {
     constructor(
         private iCallback: (input: unknown) => TIn,
         private oCallback: (
-            gState: GetTypeContext<Context, SymbolGlobalStateType>, 
-            lState: Partial<GetTypeContext<Context, SymbolLocalStateType>>, 
-            input: TIn, 
-            socket: DTSocketServer_CSocket<Context, Socket>
+            gState: GetTypeContext<Context, SymbolGlobalStateType>,
+            lState: Partial<GetTypeContext<Context, SymbolLocalStateType>>,
+            input: TIn,
+            socket: DTSocketServer_CSocket<Context>
         ) => AsyncIterable<TOut>,
         public burst: boolean
     ) { }
 
     execute(
-        gState: GetTypeContext<Context, SymbolGlobalStateType>, 
+        gState: GetTypeContext<Context, SymbolGlobalStateType>,
         lState: Partial<GetTypeContext<Context, SymbolLocalStateType>>,
-        input: TIn, 
-        socket: DTSocketServer_CSocket<Context, Socket>
+        input: TIn,
+        socket: DTSocketServer_CSocket<Context>
     ) {
         return this.oCallback(gState, lState, this.iCallback(input), socket);
     }

@@ -8,6 +8,8 @@ This package is inspired by [tRPC](https://github.com/trpc/trpc), but rather tha
 
 Compatible with [js-protov2d](https://github.com/BadAimWeeb/js-protov2d)`@1`.
 
+*🐉 This library is in BETA stage. Expect bugs and changes, but it has been battle-tested in some low-volume services and we have catched some bugs this way.*
+
 ## Usage
 
 Create server:
@@ -67,6 +69,11 @@ const dtServer = new DTSocketServer<ServerContext<typeof gState, LState, EventTa
 // ...and exporting definitions for client to use.
 export type ServerDef = typeof dtServer;
 
+// It's important to drop the connection when the client disconnects and timed out.
+v2dServer.on("dropConnection", (socket) => {
+    dtServer.removeSession(socket);
+});
+
 // Handle client connection
 v2dServer.on("connection", async (socket) => {
     // Upgrade to DTSocket
@@ -79,16 +86,24 @@ v2dServer.on("connection", async (socket) => {
         // Emit server event
         dtSocket.emit("test", a);
     });
+
+   // Handle client connection timeout.
+   // When this event is fired, DTServer will disregard this connection and remove it from the session list.
+   // You may use this event to clean up resources. You cannot send messages to client.
+    dtSocket.on("internal:drop", () => {
+        // lState can be accessed at dtSocket.lState if you want to get state to clean up.
+        console.log("Client timed out");
+    }); 
 });
 
 // ...or you can handle it this way
-dtServer.on("session", dtSocket => {
+dtServer.on("internal:new-session", dtSocket => {
     // do stuff
 });
 
-// It's important to drop the connection when the client disconnects and timed out.
-v2dServer.on("dropConnection", (socket) => {
-    dtServer.removeSession(socket);
+// Handling client disconnection is also possible outside of the connection event.
+dtServer.on("internal:remove-session", dtSocket => {
+    // do stuff like clean up.
 });
 ```
 

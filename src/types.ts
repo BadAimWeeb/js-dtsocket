@@ -75,3 +75,5 @@ export type DefaultServerContext = {
 
 export type GetTypeContext<A extends ServerContext<any, any, any, any, any>, SuppliedSymbol extends "GlobalState" | "LocalState" | "EventTable" | "Procedures" | "SocketImpl"> =
     A[SuppliedSymbol] extends undefined ? DefaultServerContext[SuppliedSymbol] : A[SuppliedSymbol];
+
+export type KeyOfStringOnly<T> = Exclude<keyof T, number | symbol>;

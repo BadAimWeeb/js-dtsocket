@@ -1,6 +1,6 @@
 import { connect, Server, keyGeneration, Session } from "@badaimweeb/js-protov2d";
 import z from "zod";
-import { DTSocketClient, DTSocketServer, InitProcedureGenerator, Socket, type ServerContext } from "../index.js";
+import { DTSocketClient, DTSocketServer, InitProcedureGenerator, type ServerContext } from "../index.js";
 
 let k = await keyGeneration();
 

@@ -1,30 +1,69 @@
 import { EventEmitter } from "events";
-import type { CSEventTable, GetTypeContext, SCEventTable, ServerContext, Socket, SymbolEventTableType, SymbolLocalStateType, SymbolSocketImplType } from "./types";
-import type { DTSocketServer } from "./server.js";
+import type { GetTypeContext, KeyOfStringOnly, ServerContext, Socket, SymbolEventTableType, SymbolLocalStateType } from "./types";
+import type { DTSocketServerInterface } from "./server.js";
 
 import { encode, decode } from "msgpack-lite";
-import { DTSocketServer_BroadcastOperator } from "./server_broadcast.js";
+import { DTSSBOImpl, DTSocketServer_BroadcastOperator } from "./server_broadcast.js";
 
-export interface DTSocketServer_CSocket<Context extends ServerContext> extends EventEmitter {
-    on<T extends keyof CSEventTable<GetTypeContext<Context, SymbolEventTableType>>>(event: T, callback: (...args: CSEventTable<GetTypeContext<Context, SymbolEventTableType>>[T]) => void): this;
-    on(event: string | symbol, callback: (...args: any[]) => void): this;
 
-    emit<T extends keyof SCEventTable<GetTypeContext<Context, SymbolEventTableType>>>(event: T, ...args: SCEventTable<GetTypeContext<Context, SymbolEventTableType>>[T]): boolean;
-    emit(event: string | symbol, ...args: any[]): boolean;
+
+type MapEmitTable<Context extends ServerContext> = {
+    cs: {
+        [K in keyof GetTypeContext<Context, SymbolEventTableType>["csEvents"]]: Parameters<GetTypeContext<Context, SymbolEventTableType>["csEvents"][K]>
+    } & {
+        "internal:drop": []
+    },
+    sc: {
+        [K in keyof GetTypeContext<Context, SymbolEventTableType>["scEvents"]]: Parameters<GetTypeContext<Context, SymbolEventTableType>["scEvents"][K]>
+    }
 }
 
-export class DTSocketServer_CSocket<Context extends ServerContext, SocketImpl extends Socket = GetTypeContext<Context, SymbolSocketImplType>> extends EventEmitter {
+export interface DTSocketServer_CSocket<
+    Context extends ServerContext, 
+    /** PRIVATE TYPE VARIABLE, DO NOT OVERRIDE */
+    EmitTable extends MapEmitTable<Context> = MapEmitTable<Context>
+> {
+    addListener<E extends KeyOfStringOnly<EmitTable["cs"]>>(event: E, listener: (...args: EmitTable["cs"][E]) => void): this
+    on<E extends KeyOfStringOnly<EmitTable["cs"]>>(event: E, listener: (...args: EmitTable["cs"][E]) => void): this
+    once<E extends KeyOfStringOnly<EmitTable["cs"]>>(event: E, listener: (...args: EmitTable["cs"][E]) => void): this
+    prependListener<E extends KeyOfStringOnly<EmitTable["cs"]>>(event: E, listener: (...args: EmitTable["cs"][E]) => void): this
+    prependOnceListener<E extends KeyOfStringOnly<EmitTable["cs"]>>(event: E, listener: (...args: EmitTable["cs"][E]) => void): this
+
+    off<E extends KeyOfStringOnly<EmitTable["cs"]>>(event: E, listener: (...args: EmitTable["cs"][E]) => void): this
+    removeAllListeners<E extends KeyOfStringOnly<EmitTable["cs"]>>(event?: E): this
+    removeListener<E extends KeyOfStringOnly<EmitTable["cs"]>>(event: E, listener: (...args: EmitTable["cs"][E]) => void): this
+
+    emit<E extends KeyOfStringOnly<EmitTable["sc"]>>(event: E, ...args: EmitTable["sc"][E]): boolean
+    eventNames(): string[]
+    rawListeners<E extends KeyOfStringOnly<EmitTable["cs"]>>(event: E): ((...args: EmitTable["cs"][E]) => void)[]
+    listeners<E extends KeyOfStringOnly<EmitTable["cs"]>>(event: E): ((...args: EmitTable["cs"][E]) => void)[]
+    listenerCount<E extends KeyOfStringOnly<EmitTable["cs"]>>(event: E): number
+
+    getMaxListeners(): number
+    setMaxListeners(maxListeners: number): this
+
+    lState: Partial<GetTypeContext<Context, SymbolLocalStateType>>
+    join(room: string): void
+    leave(room: string): void
+    leaveAll(): void
+    rooms: Set<string>
+    to(room: string | string[]): DTSocketServer_BroadcastOperator<Context>
+
+    server: DTSocketServerInterface<Context>
+}
+
+export class DTSSCSImpl extends EventEmitter {
     private m2Table: {
         [event: string]: Map<number, unknown[]>
     } = {};
     private m2RecvCounter: Map<string | number, number> = new Map();
     private m2SendCounter: Map<string | number, number> = new Map();
 
-    get lState(): Partial<GetTypeContext<Context, SymbolLocalStateType>> {
-        return this.server.localState.get(this.id) || {} as GetTypeContext<Context, SymbolLocalStateType>;
+    get lState() {
+        return this.server.localState.get(this.id) || {};
     }
 
-    constructor(public id: string, public socket: SocketImpl, public server: DTSocketServer<Context>) {
+    constructor(public id: string, public socket: Socket, public server: DTSocketServerInterface<any>, serverOriginalEmit: (event: string, ...args: any[]) => boolean) {
         super();
         let originalEmit = this.emit.bind(this);
         this.emit = (event: string, ...args: any[]) => {
@@ -133,7 +172,7 @@ export class DTSocketServer_CSocket<Context extends ServerContext, SocketImpl ex
                                 this.m2RecvCounter.set(m2Data[0], this.m2RecvCounter.get(m2Data[0])! + 1);
 
                                 originalEmit(m2Data[0], ...data);
-                                if (m2Data[0] !== "session") this.server.originalEmit(m2Data[0], ...data);
+                                if (m2Data[0] !== "session") serverOriginalEmit(m2Data[0], ...data);
                             }
                         }
                         break;
@@ -170,6 +209,6 @@ export class DTSocketServer_CSocket<Context extends ServerContext, SocketImpl ex
     }
 
     to(room: string | string[]) {
-        return new DTSocketServer_BroadcastOperator(this.server, [...room], [this.id]);
+        return new DTSSBOImpl(this.server, ([] as string[]).concat(room), [this.id]);
     }
 }
