@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import type { GetTypeContext, KeyOfStringOnly, ServerContext, Socket, SymbolEventTableType, SymbolLocalStateType } from "./types";
+import type { GetTypeContext, KeyOfStringOnly, ServerContext, Socket, SymbolEventTableType, SymbolLocalStateType, SymbolSocketImplType } from "./types";
 import type { DTSocketServerInterface } from "./server.js";
 
 import { encode, decode } from "msgpack-lite";
@@ -49,7 +49,9 @@ export interface DTSocketServer_CSocket<
     rooms: Set<string>
     to(room: string | string[]): DTSocketServer_BroadcastOperator<Context>
 
+    id: string
     server: DTSocketServerInterface<Context>
+    socket: GetTypeContext<Context, SymbolSocketImplType>
 }
 
 export class DTSSCSImpl extends EventEmitter {
